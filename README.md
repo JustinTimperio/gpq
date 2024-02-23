@@ -3,7 +3,7 @@
 </p>
 
 <h4 align="center">
-	GPQ is (maybe) the worlds fastest and most flexible priority queue, supporting millions of transactions a second even on laptops and low-end hardware. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation of items based on a escalation rate the user specified during submission and how frequently you ask GPQ to prioritize the queue. 
+	GPQ is (maybe) the worlds fastest and most flexible priority queue, supporting millions of transactions a second, even on laptops and low-end hardware. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation of items based on a escalation rate the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue. 
 </h4>
 
 
@@ -19,7 +19,7 @@
 GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https://github.com/JustinTimperio/fibheap) and wanted to find something faster. I was disappointed by the state of research and libraries being used by most common applications, so GPQ is meant to be highly flexible framework that can support a multitude of workloads.
 
 ## Benchmarks
-Due to the fact that most operations are done in constant time `O(n)`, with the exception of prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle millions of transactions a second and can be tuned depending on your work load. 
+Due to the fact that most operations are done in constant time `O(1)`, with the exception of prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle millions of transactions a second and can be tuned depending on your work load. 
 
 <p align="center">
   <img src="./docs/Reprioritize-All-Buckets-Every-100-Milliseconds-VS-No-Reprioritze.png">

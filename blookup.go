@@ -45,16 +45,32 @@ func (pq *BucketPriorityQueue[d]) Add(bucketID int64) {
 	if _, exists := pq.BucketIDs[bucketID]; exists {
 		return
 	}
-	bucket := &Bucket[d]{BucketID: bucketID}
-	pq.Buckets[bucket] = true
-	pq.BucketIDs[bucketID] = bucket
-	if pq.Last != nil {
-		pq.Last.Next = bucket
-		bucket.Prev = pq.Last
-	}
-	pq.Last = bucket
+	newBucket := &Bucket[d]{BucketID: bucketID}
+	pq.Buckets[newBucket] = true
+	pq.BucketIDs[bucketID] = newBucket
+
 	if pq.First == nil {
-		pq.First = bucket
+		pq.First = newBucket
+		pq.Last = newBucket
+	} else {
+		current := pq.First
+		for current != nil && current.BucketID < bucketID {
+			current = current.Next
+		}
+		if current == pq.First {
+			newBucket.Next = pq.First
+			pq.First.Prev = newBucket
+			pq.First = newBucket
+		} else if current == nil {
+			newBucket.Prev = pq.Last
+			pq.Last.Next = newBucket
+			pq.Last = newBucket
+		} else {
+			newBucket.Prev = current.Prev
+			newBucket.Next = current
+			current.Prev.Next = newBucket
+			current.Prev = newBucket
+		}
 	}
 }
 

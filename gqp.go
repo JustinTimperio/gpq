@@ -103,6 +103,9 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalationRate time.Durat
 func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 
 	// Get the first item from the highest priority bucket
+	// If the bucket is empty, remove it from the non-empty buckets
+	// This structure allows for O(1) access to the highest priority item
+	// Although its actually O(n) * (cache miss + cache hits)
 	for g.NonEmptyBuckets.Len() > 0 {
 		bucketID, exists := g.NonEmptyBuckets.Peek()
 		if !exists {
