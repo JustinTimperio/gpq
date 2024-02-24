@@ -36,7 +36,10 @@ func main() {
 				err := queue.EnQueue(
 					i,
 					int64(p),
+					false,
 					time.Minute,
+					false,
+					10*time.Minute,
 				)
 				if err != nil {
 					log.Fatalln(err)

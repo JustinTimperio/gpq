@@ -38,11 +38,13 @@ func TestGPQ(t *testing.T) {
 				r := rand.Int()
 				p := rand.Intn(10)
 				timer := time.Now()
-				err := queue.EnQueue(TestStruct{
-					ID:   r,
-					Name: "Test-" + fmt.Sprintf("%d", r)},
+				err := queue.EnQueue(
+					TestStruct{ID: r, Name: "Test-" + fmt.Sprintf("%d", r)},
 					int64(p),
-					time.Minute,
+					true,
+					time.Duration(time.Second),
+					true,
+					time.Duration(time.Second*10),
 				)
 				if err != nil {
 					log.Fatalln(err)

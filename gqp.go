@@ -53,7 +53,7 @@ func NewGPQ[d any](NumOfBuckets int) *GPQ[d] {
 // The priorityBucket is the priority level of the item
 // The escalationRate is the amount of time before the item is escalated to the next priority level
 // The data is the data you want to store in the GPQ item
-func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalationRate time.Duration) error {
+func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalationRate time.Duration, canTimeout bool, timeout time.Duration) error {
 
 	if priorityBucket > int64(len(g.Buckets)) {
 		return errors.New("Priority bucket does not exist")
@@ -63,7 +63,10 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalationRate time.Durat
 	obj := schema.Item[d]{
 		Data:           data,
 		Priority:       priorityBucket,
+		ShouldEscalate: escalate,
 		EscalationRate: escalationRate,
+		CanTimeout:     canTimeout,
+		Timeout:        timeout,
 		SubmittedAt:    time.Now(),
 		LastEscalated:  time.Now(),
 	}
@@ -153,10 +156,9 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 // If there are items, it calculates the number of durations that have passed since the last escalation and updates the priority accordingly.
 // The method uses goroutines to process each bucket concurrently, improving performance.
 // It returns an error if any of the required data structures are missing or if there are no items to prioritize.
-func (g *GPQ[d]) Prioritize() (uint64, []error) {
+func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs []error) {
 	wg := sync.WaitGroup{}
 	errCh := make(chan error, len(g.Buckets)) // Channel to collect errors
-	var shuffledItemTotal uint64
 
 	for i := 0; i < len(g.Buckets); i++ {
 		wg.Add(1)
@@ -189,19 +191,32 @@ func (g *GPQ[d]) Prioritize() (uint64, []error) {
 			evalTime := time.Now()
 			for _, pointer := range pointers {
 
-				// Calculate the number of durations that fit between evalTime and pointer.SubmittedAt
-				duration := int(math.Abs(float64(pointer.LastEscalated.Sub(evalTime))))
-				numDurations := duration / int(pointer.EscalationRate)
-
-				// If the number of durations is greater than 0, escalate the priority
-				if numDurations > 0 {
-					pointer.Priority = pointer.Priority - int64(numDurations)
-					if pointer.Priority < 0 {
-						pointer.Priority = 0
+				// Remove the item if it has timed out
+				if pointer.CanTimeout {
+					duration := int(math.Abs(float64(pointer.SubmittedAt.Sub(evalTime).Milliseconds())))
+					if duration > int(pointer.Timeout.Milliseconds()) {
+						pq.Remove(pointer)
+						atomic.AddUint64(&timedOutItems, 1)
+						continue
 					}
-					pointer.LastEscalated = evalTime
-					pq.UpdatePriority(pointer, pointer.Priority)
-					atomic.AddUint64(&shuffledItemTotal, 1)
+				}
+
+				// Escalate the priority if the item hasn't timed out and can escalate
+				if pointer.ShouldEscalate {
+					// Calculate the number of durations that fit between evalTime and pointer.SubmittedAt
+					duration := int(math.Abs(float64(pointer.LastEscalated.Sub(evalTime).Milliseconds())))
+					numDurations := duration / int(pointer.EscalationRate.Milliseconds())
+
+					// If the number of durations is greater than 0, escalate the priority
+					if numDurations > 0 {
+						pointer.Priority = pointer.Priority - int64(numDurations)
+						if pointer.Priority < 0 {
+							pointer.Priority = 0
+						}
+						pointer.LastEscalated = evalTime
+						pq.UpdatePriority(pointer, pointer.Priority)
+						atomic.AddUint64(&escalatedItems, 1)
+					}
 				}
 
 			}
@@ -213,7 +228,6 @@ func (g *GPQ[d]) Prioritize() (uint64, []error) {
 		close(errCh) // Close the error channel after all goroutines have completed
 	}()
 
-	var errs []error
 	// Collect errors from the error channel
 	for err := range errCh {
 		if err != nil {
@@ -221,7 +235,7 @@ func (g *GPQ[d]) Prioritize() (uint64, []error) {
 		}
 	}
 
-	return shuffledItemTotal, errs
+	return timedOutItems, escalatedItems, errs
 }
 
 func (g *GPQ[d]) Stats() (uint64, map[int64]uint64) {

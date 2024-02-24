@@ -3,7 +3,7 @@
 </p>
 
 <h4 align="center">
-	GPQ is one of the worlds fastest and most flexible priority queues, supporting millions of transactions a second, even on laptops and low-end hardware. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation of items based on a escalation rate the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue. 
+	GPQ is one of the worlds fastest and most flexible priority queues, supporting millions of transactions a second, even on laptops and low-end hardware. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on a parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
 </h4>
 
 
@@ -50,8 +50,28 @@ import "github.com/JustinTimperio/gpq"
    3. `Prioritize() (uint64, []error)` - Prioritize stops transactions on each bucket concurrently to shuffle the priorities internally within the bucket depending on the escalation rate given at time of EnQueue'ing
 
 
+### Submitting Items to the Queue
+Once you have an initialized queue you can easily submit items like the following:
+```go
 
-#### Example Usage
+queue := gpq.NewGPQ[int](10)
+
+var (
+	data int = 1
+	priority int64 = 5 
+	shouldEscalate bool = true
+	escalationRate time.Duration = time.Duration(time.Second)
+	canTimeout bool = true
+	timeout time.Duration = time.Duration(10*time.Second)
+)
+
+queue.EnQueue(data, priority, shouldEscalate, escalationRate, canTimeout, timeout)
+
+```
+
+You have a few options when you submit a job such as if the item should escalate over time if not sent, or inversely can timeout if it has been enqueued to long to be relevant anymore.
+
+### Example Usage
 ```go
 package main
 

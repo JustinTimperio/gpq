@@ -75,3 +75,7 @@ func (pq *CorePriorityQueue[T]) UpdatePriority(item *schema.Item[T], priority in
 func (pq *CorePriorityQueue[T]) UpdateData(item *schema.Item[T], data T) {
 	item.Data = data
 }
+
+func (pq *CorePriorityQueue[T]) Remove(item *schema.Item[T]) {
+	gheap.Remove[T](pq, item.Index)
+}
