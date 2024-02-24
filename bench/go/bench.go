@@ -1,32 +1,28 @@
-package gpq_test
+package main
 
 import (
-	"fmt"
 	"log"
 	"math/rand"
+	_ "net/http/pprof"
 	"sync"
 	"sync/atomic"
-	"testing"
 	"time"
 
 	"github.com/JustinTimperio/gpq"
 )
 
-type TestStruct struct {
-	ID   int
-	Name string
-}
+var (
+	total      int  = 10000000
+	prioritize bool = false
+	print      bool = false
+	maxBuckets int  = 100
+	sent       uint64
+	received   uint64
+)
 
-func TestGPQ(t *testing.T) {
+func main() {
 
-	var (
-		total    int  = 10000000
-		print    bool = false
-		sent     uint64
-		received uint64
-	)
-
-	queue := gpq.NewGPQ[TestStruct](10)
+	queue := gpq.NewGPQ[int](10)
 	wg := &sync.WaitGroup{}
 	wg.Add(17)
 
@@ -35,12 +31,10 @@ func TestGPQ(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < total/16; i++ {
-				r := rand.Int()
 				p := rand.Intn(10)
 				timer := time.Now()
-				err := queue.EnQueue(TestStruct{
-					ID:   r,
-					Name: "Test-" + fmt.Sprintf("%d", r)},
+				err := queue.EnQueue(
+					i,
 					int64(p),
 					time.Minute,
 				)
@@ -88,4 +82,5 @@ func TestGPQ(t *testing.T) {
 
 	wg.Wait()
 	log.Println("Sent", sent, "Received", received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
+
 }
