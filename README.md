@@ -19,7 +19,7 @@
 GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https://github.com/JustinTimperio/fibheap) and wanted to find something faster. I was disappointed by the state of research and libraries being used by most common applications, so GPQ is meant to be highly flexible framework that can support a multitude of workloads.
 
 ## Benchmarks
-Due to the fact that most operations are done in constant time `O(1)`, with the exception of prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle millions of transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, and Go to measure GPQ's performance against the standard implementations of other languages. **For 10 Million entries, fully enqueued and dequeued, it takes about 3 seconds with Rust, 4.3 seconds with Go/GPQ and about 8.5 seconds for C++**.
+Due to the fact that most operations are done in constant time `O(1)`, with the exception of prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle millions of transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, and Go to measure GPQ's performance against the standard implementations of other languages. **For 10 Million entries, fully enqueued and dequeued, it takes about 3 seconds with Rust, 4 seconds with Go/GPQ and about 8 seconds for C++**.
 
 
 <p align="center">
