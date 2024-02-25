@@ -16,7 +16,7 @@
 6. [License](https://github.com/JustinTimperio/gpq?tab=readme-ov-file#license)
 
 ## Background
-GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https://en.wikipedia.org/wiki/Fibonacci_heap) and wanted to find something faster. I was disappointed by the state of research and libraries being used by most common applications, so GPQ is meant to be highly flexible framework that can support a multitude of workloads.
+GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https://en.wikipedia.org/wiki/Fibonacci_heap) and wanted to find something faster. I was disappointed by the state of research and libraries being used by most common applications, so GPQ is meant to be a highly flexible framework that can support a multitude of workloads.
 
 ### Other Priority Queues I'm Working On
 - [fibheap (Fibonacci Heaps)](https://github.com/JustinTimperio/fibheap)
@@ -24,7 +24,7 @@ GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https
 - [rpq (Rust Priority Queue)](https://github.com/JustinTimperio/rpq)
 
 ## Benchmarks
-Due to the fact that most operations are done in constant time `O(1)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, and Go to measure GPQ's performance against the standard implementations of other languages. **While not a direct comparison, 10 million entries fully enqueued and dequeued takes about 3 seconds with Rust, 4 seconds with Go/GPQ and about 8 seconds for C++**. (Happy to have someone who knows C++ or Rust comment here)
+Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, and Go to measure GPQ's performance against the standard implementations of other languages. **While not a direct comparison, 10 million entries fully enqueued and dequeued takes about 3 seconds with Rust, 4 seconds with Go/GPQ and about 8 seconds for C++**. (Happy to have someone who knows C++ or Rust comment here)
 
 
 <p align="center">
@@ -84,10 +84,9 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"net/http"
-	_ "net/http/pprof"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/JustinTimperio/gpq"
@@ -98,120 +97,79 @@ type TestStruct struct {
 	Name string
 }
 
-// Set the total number of items and if you want to print the results
-var (
-	total      int  = 20000000
-	prioritize bool = false
-	print      bool = false
-	nBuckets   int  = 1000
-	sent       uint64
-	received   uint64
-)
+func TestGPQ(t *testing.T) {
 
-func main() {
+	var (
+		total    int  = 10000000
+		print    bool = false
+		sent     uint64
+		received uint64
+	)
 
-	// Create a new GPQ with a h-heap width of 100 using the TestStruct as the data type
-	queue := gpq.NewGPQ[TestStruct](nBuckets)
-	var reprioritized uint64
+	queue := gpq.NewGPQ[TestStruct](10)
+	wg := &sync.WaitGroup{}
+	wg.Add(17)
 
-	// Setup the pprof server if you want to profile
-	go func() {
-		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
-	}()
-
-	// If you want to prioritize the queue, start the prioritize function
-	// This will move items to the front of the queue if they have been waiting too long
-	if prioritize {
+	timer := time.Now()
+	for i := 0; i < 16; i++ {
 		go func() {
-			for {
-				count, err := queue.Prioritize()
-				time.Sleep(100 * time.Millisecond)
-
+			defer wg.Done()
+			for i := 0; i < total/16; i++ {
+				r := rand.Int()
+				p := rand.Intn(10)
+				timer := time.Now()
+				err := queue.EnQueue(
+					TestStruct{ID: r, Name: "Test-" + fmt.Sprintf("%d", r)},
+					int64(p),
+					true,
+					time.Duration(time.Second),
+					true,
+					time.Duration(time.Second*10),
+				)
 				if err != nil {
-					log.Println("Prioritized:", count, "No items to prioritize in", len(err), "buckets")
-					continue
+					log.Fatalln(err)
 				}
-				log.Println("Prioritized:", count)
-				atomic.AddUint64(&reprioritized, count)
+				if print {
+					log.Println("EnQueue", p, time.Since(timer))
+				}
+				atomic.AddUint64(&sent, 1)
 			}
 		}()
 	}
 
-	// Set up the wait group
-	wg := &sync.WaitGroup{}
-	timer := time.Now()
+	var missed int64
+	var hits int64
 
-	// Launch 4 senders to simulate multiple incoming streams of data
-	wg.Add(4)
-	for i := 0; i < 4; i++ {
-		go func() {
-			defer wg.Done()
-			sender(queue, total/4)
-		}()
-	}
+	go func() {
+		defer wg.Done()
 
-	// Launch a receiver to simulate 2 consumers acting asynchronously
-	wg.Add(2)
-	for i := 0; i < 2; i++ {
-		go func() {
-			defer wg.Done()
-			receiver(queue, total)
-		}()
-	}
+		var lastPriority int64
 
-	// Wait for all the senders and receivers to finish
+		for total > int(received) {
+			timer := time.Now()
+			priority, item, err := queue.DeQueue()
+			if err != nil {
+				log.Println(err)
+				time.Sleep(10 * time.Millisecond)
+				lastPriority = 0
+				continue
+			}
+			received++
+			if print {
+				log.Println("DeQueue", priority, received, item, time.Since(timer))
+			}
+
+			if lastPriority > priority {
+				missed++
+			} else {
+				hits++
+			}
+			lastPriority = priority
+		}
+	}()
+
 	wg.Wait()
-
-	// Print the results
-	log.Println(
-		"Sent:", sent,
-		"Received:", received,
-		"Finished in:", time.Since(timer),
-		"Reprioritized:", reprioritized,
-	)
-
-}
-
-func receiver(queue *gpq.GPQ[TestStruct], total int) {
-	var lastPriority int64
-	for total > int(received) {
-		timer := time.Now()
-		priority, item, err := queue.DeQueue()
-		if err != nil {
-			log.Println(err)
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		atomic.AddUint64(&received, 1)
-
-		if print {
-			log.Println("DeQueue", priority, item, time.Since(timer), "Total:", received)
-		}
-		if lastPriority > priority {
-			log.Fatalln("Priority out of order")
-		}
-	}
-}
-
-func sender(queue *gpq.GPQ[TestStruct], total int) {
-	for i := 0; i < total; i++ {
-		r := rand.Int()
-		p := rand.Intn(nBuckets)
-		timer := time.Now()
-		err := queue.EnQueue(TestStruct{
-			ID:   r,
-			Name: "Test-" + fmt.Sprintf("%d", r)},
-			int64(p),
-			time.Second,
-		)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		if print {
-			log.Println("EnQueue", p, time.Since(timer), "Total:", sent)
-		}
-		atomic.AddUint64(&sent, 1)
-	}
+	log.Println("Sent", sent, "Received", received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
 }
 ```
 
