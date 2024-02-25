@@ -3,7 +3,7 @@
 </p>
 
 <h4 align="center">
-	GPQ is an extremely fastest and flexible priority queue, capable of supporting a few million  transactions a second on most hardware. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on a parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
+	GPQ is an extremely fast and flexible priority queue, capable of supporting a few million  transactions a second on most hardware. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on a parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
 </h4>
 
 
@@ -18,7 +18,7 @@
 ## Background
 GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https://en.wikipedia.org/wiki/Fibonacci_heap) and wanted to find something faster. I was disappointed by the state of research and libraries being used by most common applications, so GPQ is meant to be highly flexible framework that can support a multitude of workloads.
 
-#### Other Priority Queues I'm Working On
+### Other Priority Queues I'm Working On
 - [fibheap (Fibonacci Heaps)](https://github.com/JustinTimperio/fibheap)
 - [gpq (Go Priority Queue)](https://github.com/JustinTimperio/gpq)
 - [rpq (Rust Priority Queue)](https://github.com/JustinTimperio/rpq)
