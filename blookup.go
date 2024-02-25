@@ -1,6 +1,8 @@
 package gpq
 
-import "sync"
+import (
+	"github.com/alphadose/haxmap"
+)
 
 // Bucket priority queue implementation.
 // This is used to keep track of non-empty buckets in the GPQ
@@ -13,22 +15,20 @@ type Bucket[d any] struct {
 }
 
 type BucketPriorityQueue[d any] struct {
-	Mutex       *sync.Mutex
-	Buckets     map[*Bucket[d]]bool
-	BucketIDs   map[int64]*Bucket[d]
+	Buckets     *haxmap.Map[int64, bool]
+	BucketIDs   *haxmap.Map[int64, *Bucket[d]]
 	First, Last *Bucket[d]
 }
 
 func NewBucketPriorityQueue[d any]() *BucketPriorityQueue[d] {
 	return &BucketPriorityQueue[d]{
-		Buckets:   make(map[*Bucket[d]]bool),
-		BucketIDs: make(map[int64]*Bucket[d]),
-		Mutex:     &sync.Mutex{},
+		Buckets:   haxmap.New[int64, bool](),
+		BucketIDs: haxmap.New[int64, *Bucket[d]](),
 	}
 }
 
 func (pq *BucketPriorityQueue[d]) Len() int {
-	return len(pq.Buckets)
+	return int(pq.Buckets.Len())
 }
 
 func (pq *BucketPriorityQueue[d]) Peek() (bucketID int64, exists bool) {
@@ -39,15 +39,13 @@ func (pq *BucketPriorityQueue[d]) Peek() (bucketID int64, exists bool) {
 }
 
 func (pq *BucketPriorityQueue[d]) Add(bucketID int64) {
-	pq.Mutex.Lock()
-	defer pq.Mutex.Unlock()
 
-	if _, exists := pq.BucketIDs[bucketID]; exists {
+	if _, exists := pq.BucketIDs.Get(bucketID); exists {
 		return
 	}
 	newBucket := &Bucket[d]{BucketID: bucketID}
-	pq.Buckets[newBucket] = true
-	pq.BucketIDs[bucketID] = newBucket
+	pq.Buckets.Set(bucketID, true)
+	pq.BucketIDs.Set(bucketID, newBucket)
 
 	if pq.First == nil {
 		pq.First = newBucket
@@ -75,9 +73,7 @@ func (pq *BucketPriorityQueue[d]) Add(bucketID int64) {
 }
 
 func (pq *BucketPriorityQueue[d]) Remove(bucketID int64) {
-	pq.Mutex.Lock()
-	defer pq.Mutex.Unlock()
-	bucket, exists := pq.BucketIDs[bucketID]
+	bucket, exists := pq.BucketIDs.Get(bucketID)
 	if !exists {
 		return
 	}
@@ -91,6 +87,6 @@ func (pq *BucketPriorityQueue[d]) Remove(bucketID int64) {
 	} else {
 		pq.Last = bucket.Prev
 	}
-	delete(pq.Buckets, bucket)
-	delete(pq.BucketIDs, bucketID)
+	pq.Buckets.Del(bucketID)
+	pq.BucketIDs.Del(bucketID)
 }

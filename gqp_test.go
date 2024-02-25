@@ -28,13 +28,13 @@ func TestGPQ(t *testing.T) {
 
 	queue := gpq.NewGPQ[TestStruct](10)
 	wg := &sync.WaitGroup{}
-	wg.Add(17)
+	wg.Add(21)
 
 	timer := time.Now()
-	for i := 0; i < 16; i++ {
+	for i := 0; i < 20; i++ {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < total/16; i++ {
+			for i := 0; i < total/20; i++ {
 				r := rand.Int()
 				p := rand.Intn(10)
 				timer := time.Now()
