@@ -95,16 +95,16 @@ func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, r
 	if prioritize {
 		go func() {
 			for {
-				count, err := queue.Prioritize()
+				timedOut, prioritized, err := queue.Prioritize()
 				time.Sleep(100 * time.Millisecond)
 				if print {
-					log.Println("Prioritized:", count, "No items to prioritize in", len(err), "buckets")
+					log.Println("Prioritized:", prioritized, "Timeouts", timedOut, "No items to prioritize in", len(err), "buckets")
 				}
 
 				if err != nil {
 					continue
 				}
-				atomic.AddUint64(reprioritized, count)
+				atomic.AddUint64(reprioritized, uint64(prioritized))
 			}
 		}()
 	}

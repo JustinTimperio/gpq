@@ -3,7 +3,7 @@
 </p>
 
 <h4 align="center">
-	GPQ is one of the worlds fastest and most flexible priority queues, supporting millions of transactions a second, even on laptops and low-end hardware. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on a parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
+	GPQ is an extremely fastest and flexible priority queue, capable of supporting a few million  transactions a second on most hardware. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on a parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
 </h4>
 
 
@@ -16,10 +16,15 @@
 6. [License](https://github.com/JustinTimperio/gpq?tab=readme-ov-file#license)
 
 ## Background
-GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https://github.com/JustinTimperio/fibheap) and wanted to find something faster. I was disappointed by the state of research and libraries being used by most common applications, so GPQ is meant to be highly flexible framework that can support a multitude of workloads.
+GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https://en.wikipedia.org/wiki/Fibonacci_heap) and wanted to find something faster. I was disappointed by the state of research and libraries being used by most common applications, so GPQ is meant to be highly flexible framework that can support a multitude of workloads.
+
+#### Other Priority Queues I'm Working On
+- [fibheap (Fibonacci Heaps)](https://github.com/JustinTimperio/fibheap)
+- [gpq (Go Priority Queue)](https://github.com/JustinTimperio/gpq)
+- [rpq (Rust Priority Queue)](https://github.com/JustinTimperio/rpq)
 
 ## Benchmarks
-Due to the fact that most operations are done in constant time `O(1)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, and Go to measure GPQ's performance against the standard implementations of other languages. **For 10 Million entries, fully enqueued and dequeued, it takes about 3 seconds with Rust, 4 seconds with Go/GPQ and about 8 seconds for C++**.
+Due to the fact that most operations are done in constant time `O(1)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, and Go to measure GPQ's performance against the standard implementations of other languages. **While not a direct comparison, 10 million entries fully enqueued and dequeued takes about 3 seconds with Rust, 4 seconds with Go/GPQ and about 8 seconds for C++**. (Happy to have someone who knows C++ or Rust comment here)
 
 
 <p align="center">
