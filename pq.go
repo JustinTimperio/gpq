@@ -13,7 +13,9 @@ type CorePriorityQueue[T any] struct {
 }
 
 func NewCorePriorityQueue[T any]() CorePriorityQueue[T] {
-	return CorePriorityQueue[T]{items: make([]*schema.Item[T], 0)}
+	return CorePriorityQueue[T]{
+		items: make([]*schema.Item[T], 0),
+	}
 }
 
 // Len is used to get the length of the heap
@@ -45,10 +47,10 @@ func (pq *CorePriorityQueue[T]) EnQueue(data schema.Item[T]) {
 }
 
 // DeQueue removes the first item from the heap
-func (pq *CorePriorityQueue[T]) DeQueue() (priority int64, data T, err error) {
+func (pq *CorePriorityQueue[T]) DeQueue() (diskUUID []byte, priority int64, data T, err error) {
 
 	if len(pq.items) == 0 {
-		return -1, data, errors.New("No items in the queue")
+		return nil, -1, data, errors.New("No items in the queue")
 	}
 
 	old := pq.items
@@ -57,7 +59,7 @@ func (pq *CorePriorityQueue[T]) DeQueue() (priority int64, data T, err error) {
 	old[n-1] = nil  // avoid memory leak
 	item.Index = -1 // for safety
 	pq.items = old[0 : n-1]
-	return item.Priority, item.Data, nil
+	return item.DiskUUID, item.Priority, item.Data, nil
 }
 
 func (pq CorePriorityQueue[T]) Peek() (data T, err error) {

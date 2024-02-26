@@ -1,8 +1,6 @@
 package gpq
 
 import (
-	"sync"
-
 	"github.com/cornelk/hashmap"
 )
 
@@ -17,25 +15,22 @@ type Bucket[d any] struct {
 }
 
 type BucketPriorityQueue[d any] struct {
-	Buckets     *hashmap.Map[int64, bool]
 	BucketIDs   *hashmap.Map[int64, *Bucket[d]]
 	First, Last *Bucket[d]
-	Mutex       *sync.Mutex
 }
 
 func NewBucketPriorityQueue[d any]() *BucketPriorityQueue[d] {
 	return &BucketPriorityQueue[d]{
-		Buckets:   hashmap.New[int64, bool](),
 		BucketIDs: hashmap.New[int64, *Bucket[d]](),
-		Mutex:     &sync.Mutex{},
 	}
 }
 
 func (pq *BucketPriorityQueue[d]) Len() int {
-	return int(pq.Buckets.Len())
+	return int(pq.BucketIDs.Len())
 }
 
 func (pq *BucketPriorityQueue[d]) Peek() (bucketID int64, exists bool) {
+
 	if pq.First == nil {
 		return 0, false
 	}
@@ -43,16 +38,11 @@ func (pq *BucketPriorityQueue[d]) Peek() (bucketID int64, exists bool) {
 }
 
 func (pq *BucketPriorityQueue[d]) Add(bucketID int64) {
-
 	if _, exists := pq.BucketIDs.Get(bucketID); exists {
 		return
 	}
 
-	pq.Mutex.Lock()
-	defer pq.Mutex.Unlock()
-
 	newBucket := &Bucket[d]{BucketID: bucketID}
-	pq.Buckets.Set(bucketID, true)
 	pq.BucketIDs.Set(bucketID, newBucket)
 
 	if pq.First == nil {
@@ -81,8 +71,6 @@ func (pq *BucketPriorityQueue[d]) Add(bucketID int64) {
 }
 
 func (pq *BucketPriorityQueue[d]) Remove(bucketID int64) {
-	pq.Mutex.Lock()
-	defer pq.Mutex.Unlock()
 	bucket, exists := pq.BucketIDs.Get(bucketID)
 	if !exists {
 		return
@@ -97,6 +85,10 @@ func (pq *BucketPriorityQueue[d]) Remove(bucketID int64) {
 	} else {
 		pq.Last = bucket.Prev
 	}
-	pq.Buckets.Del(bucketID)
 	pq.BucketIDs.Del(bucketID)
+}
+
+func (pq *BucketPriorityQueue[d]) Contains(bucketID int64) bool {
+	_, exists := pq.BucketIDs.Get(bucketID)
+	return exists
 }

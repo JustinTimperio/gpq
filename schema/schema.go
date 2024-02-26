@@ -6,6 +6,7 @@ type Item[d any] struct {
 	// User
 	Priority       int64
 	Data           d
+	DiskUUID       []byte
 	ShouldEscalate bool
 	EscalationRate time.Duration
 	CanTimeout     bool
