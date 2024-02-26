@@ -5,6 +5,7 @@ go 1.22.0
 require (
 	github.com/cornelk/hashmap v1.0.8
 	github.com/dgraph-io/badger/v4 v4.2.0
+	github.com/google/uuid v1.6.0
 )
 
 require (

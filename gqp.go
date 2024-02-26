@@ -1,6 +1,8 @@
 package gpq
 
 import (
+	"bytes"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"math"
@@ -11,6 +13,7 @@ import (
 	"github.com/JustinTimperio/gpq/schema"
 	"github.com/cornelk/hashmap"
 	"github.com/dgraph-io/badger/v4"
+	"github.com/google/uuid"
 )
 
 // GPQ is a priority queue that supports priority escalation
@@ -101,10 +104,37 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalation
 	count, _ := g.BucketsLenMap.Get(priorityBucket)
 	pq, _ := g.Buckets.Get(priorityBucket)
 
-	// Enqueue the item
-	mutex.Lock()
-	pq.EnQueue(obj)
-	mutex.Unlock()
+	if !g.DiskCacheEnabled {
+		// Enqueue the item
+		mutex.Lock()
+		pq.EnQueue(obj)
+		mutex.Unlock()
+	} else {
+		key, err := uuid.New().MarshalBinary()
+		if err != nil {
+			return err
+		}
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		err = enc.Encode(data)
+		if err != nil {
+			return err
+		}
+		value := buf.Bytes()
+
+		// Send the item to the disk cache
+		err = g.DiskCache.Update(func(txn *badger.Txn) error {
+			return txn.Set(key, value)
+		})
+		if err != nil {
+			return err
+		}
+		obj.DiskUUID = key
+
+		mutex.Lock()
+		pq.EnQueue(obj)
+		mutex.Unlock()
+	}
 
 	if !g.NonEmptyBuckets.Contains(priorityBucket) {
 		g.NonEmptyBucketsMutex.Lock()
@@ -143,23 +173,64 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 		count, _ := g.BucketsLenMap.Get(priorityBucket)
 		pq, _ := g.Buckets.Get(priorityBucket)
 
-		// Dequeue the item
-		mutex.Lock()
-		priority, item, err := pq.DeQueue()
-		mutex.Unlock()
+		if !g.DiskCacheEnabled {
+			// Dequeue the item
+			mutex.Lock()
+			_, p, item, e := pq.DeQueue()
+			mutex.Unlock()
+			data = item
+			priority = p
+			err = e
 
-		if err != nil {
-			g.NonEmptyBucketsMutex.Lock()
-			g.NonEmptyBuckets.Remove(priorityBucket)
-			g.NonEmptyBucketsMutex.Unlock()
-			continue
+		} else {
+			// Get the item from the disk cache
+			mutex.Lock()
+			key, p, _, err := pq.DeQueue()
+			mutex.Unlock()
+
+			if err != nil {
+				g.NonEmptyBucketsMutex.Lock()
+				g.NonEmptyBuckets.Remove(priorityBucket)
+				g.NonEmptyBucketsMutex.Unlock()
+				continue
+			}
+
+			priority = p
+
+			// Get the item from the disk cache
+			var value []byte
+			err = g.DiskCache.View(func(txn *badger.Txn) error {
+				item, err := txn.Get(key)
+				if err != nil {
+					return err
+				}
+				return item.Value(func(val []byte) error {
+					value = append([]byte{}, val...)
+					return nil
+				})
+			})
+			if err != nil {
+				return -1, data, err
+			}
+			err = g.DiskCache.Update(func(txn *badger.Txn) error {
+				return txn.Delete(key)
+			})
+			if err != nil {
+				return -1, data, err
+			}
+			var buf bytes.Buffer
+			buf.Write(value)
+			err = gob.NewDecoder(&buf).Decode(&data)
+			if err != nil {
+				return -1, data, err
+			}
 		}
 
 		// Decrement the length of the priority bucket and the total length
 		// ^uint64(0) is the same as -1 (idk some cursed ass fuckery)
 		atomic.AddUint64(&count, ^uint64(0))
 		atomic.AddUint64(&g.TotalLen, ^uint64(0))
-		return priority, item, nil
+		return priority, data, nil
 	}
 
 	return -1, data, errors.New("No items in ANY queue")

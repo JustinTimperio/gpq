@@ -21,8 +21,8 @@ type TestStruct struct {
 func TestGPQ(t *testing.T) {
 
 	var (
-		total    int  = 10000000
-		print    bool = false
+		total    int  = 1000
+		print    bool = true
 		sent     uint64
 		received uint64
 	)
@@ -66,7 +66,7 @@ func TestGPQ(t *testing.T) {
 		}
 	}()
 
-	queue, err := gpq.NewGPQ[int](10, false, "")
+	queue, err := gpq.NewGPQ[int](10, true, "/tmp/gpq/")
 	if err != nil {
 		log.Fatalln(err)
 	}
