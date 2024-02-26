@@ -13,7 +13,9 @@ type CorePriorityQueue[T any] struct {
 }
 
 func NewCorePriorityQueue[T any]() CorePriorityQueue[T] {
-	return CorePriorityQueue[T]{items: make([]*schema.Item[T], 0)}
+	return CorePriorityQueue[T]{
+		items: make([]*schema.Item[T], 0),
+	}
 }
 
 // Len is used to get the length of the heap
