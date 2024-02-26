@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq/schema"
+	"github.com/cornelk/hashmap"
 )
 
 // GPQ is a priority queue that supports priority escalation
@@ -16,11 +17,12 @@ type GPQ[d any] struct {
 	// TotalLen is the total length of the GPQ
 	TotalLen uint64
 	// Buckets is a map of priority buckets
-	Buckets map[int64]*CorePriorityQueue[d]
+	Buckets *hashmap.Map[int64, *CorePriorityQueue[d]]
 	// MutexMap is a map of mutexes for each priority bucket
-	BucketMutexMap map[int64]*sync.Mutex
+	// This is used to lock the priority bucket when enqueuing and dequeuing
+	BucketMutexMap *hashmap.Map[int64, *sync.Mutex]
 	// LenMap is a map of the length of each priority bucket
-	BucketLenMap map[int64]uint64
+	BucketsLenMap *hashmap.Map[int64, uint64]
 	// NonEmptyBuckets is a priority queue of non-empty buckets
 	NonEmptyBuckets *BucketPriorityQueue[d]
 }
@@ -33,17 +35,17 @@ func NewGPQ[d any](NumOfBuckets int) *GPQ[d] {
 	bp := NewBucketPriorityQueue[d]()
 
 	gpq := &GPQ[d]{
-		Buckets:         make(map[int64]*CorePriorityQueue[d]),
-		BucketLenMap:    make(map[int64]uint64),
-		BucketMutexMap:  make(map[int64]*sync.Mutex),
+		Buckets:         hashmap.New[int64, *CorePriorityQueue[d]](),
+		BucketsLenMap:   hashmap.New[int64, uint64](),
+		BucketMutexMap:  hashmap.New[int64, *sync.Mutex](),
 		NonEmptyBuckets: bp,
 	}
 
 	for i := 0; i < NumOfBuckets; i++ {
-		pq := make(CorePriorityQueue[d], 0)
-		gpq.Buckets[int64(i)] = &pq
-		gpq.BucketMutexMap[int64(i)] = &sync.Mutex{}
-		gpq.BucketLenMap[int64(i)] = 0
+		pq := NewCorePriorityQueue[d]()
+		gpq.Buckets.Set(int64(i), &pq)
+		gpq.BucketsLenMap.Set(int64(i), 0)
+		gpq.BucketMutexMap.Set(int64(i), &sync.Mutex{})
 	}
 
 	return gpq
@@ -55,7 +57,7 @@ func NewGPQ[d any](NumOfBuckets int) *GPQ[d] {
 // The data is the data you want to store in the GPQ item
 func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalationRate time.Duration, canTimeout bool, timeout time.Duration) error {
 
-	if priorityBucket > int64(len(g.Buckets)) {
+	if priorityBucket > int64(g.Buckets.Len()) {
 		return errors.New("Priority bucket does not exist")
 	}
 
@@ -71,26 +73,26 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalation
 		LastEscalated:  time.Now(),
 	}
 
-	mutex, ok := g.BucketMutexMap[priorityBucket]
+	mutex, ok := g.BucketMutexMap.Get(priorityBucket)
 	if !ok {
 		return errors.New("Mutex does not exist")
 	}
 
-	count := g.BucketLenMap[priorityBucket]
+	count, ok := g.BucketsLenMap.Get(priorityBucket)
 	if !ok {
 		return errors.New("Bucket length does not exist")
 	}
 
-	pq, ok := g.Buckets[priorityBucket]
+	pq, ok := g.Buckets.Get(priorityBucket)
 	if !ok {
 		return errors.New("Priority bucket does not exist")
 	}
 
 	// Enqueue the item
 	mutex.Lock()
-	defer mutex.Unlock()
 	pq.EnQueue(obj)
 	g.NonEmptyBuckets.Add(priorityBucket)
+	mutex.Unlock()
 
 	// Increment the length of the priority bucket and the total length
 	atomic.AddUint64(&count, 1)
@@ -102,7 +104,6 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalation
 // DeQueue removes and returns the item with the highest priority from the GPQ.
 // It returns the priority of the item, the data associated with it,
 // and an error if the queue is empty or if any internal data structures are missing.
-
 func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 
 	// Get the first item from the highest priority bucket
@@ -110,33 +111,32 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 	// This structure allows for O(1) access to the highest priority item
 	// Although its actually O(n) * (cache miss + cache hits)
 	for g.NonEmptyBuckets.Len() > 0 {
-		bucketID, exists := g.NonEmptyBuckets.Peek()
+		priorityBucket, exists := g.NonEmptyBuckets.Peek()
 		if !exists {
 			return -1, data, errors.New("No items in the queue")
 		}
 
-		mutex, ok := g.BucketMutexMap[bucketID]
+		mutex, ok := g.BucketMutexMap.Get(priorityBucket)
 		if !ok {
 			return -1, data, errors.New("Mutex does not exist")
 		}
 
-		count, ok := g.BucketLenMap[bucketID]
+		count, ok := g.BucketsLenMap.Get(priorityBucket)
 		if !ok {
 			return -1, data, errors.New("Bucket length does not exist")
 		}
 
-		pq, ok := g.Buckets[bucketID]
+		pq, ok := g.Buckets.Get(priorityBucket)
 		if !ok {
 			return -1, data, errors.New("Priority bucket does not exist")
 		}
 
-		// Lock the priority bucket
-		mutex.Lock()
-		defer mutex.Unlock()
 		// Dequeue the item
+		mutex.Lock()
 		priority, item, err := pq.DeQueue()
+		mutex.Unlock()
 		if err != nil {
-			g.NonEmptyBuckets.Remove(bucketID)
+			g.NonEmptyBuckets.Remove(priorityBucket)
 			continue
 		}
 
@@ -158,29 +158,20 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 // It returns an error if any of the required data structures are missing or if there are no items to prioritize.
 func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs []error) {
 	wg := sync.WaitGroup{}
-	errCh := make(chan error, len(g.Buckets)) // Channel to collect errors
+	errCh := make(chan error, g.Buckets.Len()) // Channel to collect errors
 
-	for i := 0; i < len(g.Buckets); i++ {
+	for i := 0; i < int(g.Buckets.Len()); i++ {
 		wg.Add(1)
 
 		go func(bucketID int64) {
 			defer wg.Done()
 
-			// Try and Lock
-			mutex, ok := g.BucketMutexMap[bucketID]
-			if !ok {
-				errCh <- errors.New("Mutex does not exist")
-				return
-			}
-
-			pq, ok := g.Buckets[bucketID]
+			pq, ok := g.Buckets.Get(bucketID)
 			if !ok {
 				errCh <- errors.New("Priority bucket does not exist")
 				return
 			}
 
-			mutex.Lock()
-			defer mutex.Unlock()
 			_, err := pq.Peek()
 			if err != nil {
 				errCh <- errors.New("No items to prioritize in heap: " + fmt.Sprintf("%d", bucketID))
@@ -236,9 +227,4 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 	}
 
 	return timedOutItems, escalatedItems, errs
-}
-
-func (g *GPQ[d]) Stats() (uint64, map[int64]uint64) {
-
-	return g.TotalLen, g.BucketLenMap
 }

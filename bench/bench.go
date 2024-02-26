@@ -178,7 +178,10 @@ func sender(queue *gpq.GPQ[TestStruct], total int, sent *uint64, buckets int) {
 			ID:   r,
 			Name: "Test-" + fmt.Sprintf("%d", r)},
 			int64(p),
+			false,
 			10*time.Millisecond,
+			false,
+			10*time.Second,
 		)
 		if err != nil {
 			log.Fatalln(err)

@@ -8,72 +8,73 @@ import (
 )
 
 // A PriorityQueue implements heap.Interface and holds Items.
-type CorePriorityQueue[T any] []*schema.Item[T]
+type CorePriorityQueue[T any] struct {
+	items []*schema.Item[T]
+}
+
+func NewCorePriorityQueue[T any]() CorePriorityQueue[T] {
+	return CorePriorityQueue[T]{items: make([]*schema.Item[T], 0)}
+}
 
 // Len is used to get the length of the heap
 // It is needed to implement the heap.Interface
 func (pq CorePriorityQueue[T]) Len() int {
-	return len(pq)
+	return len(pq.items)
 }
 
 // Less is used to compare the priority of two items
 // It is needed to implement the heap.Interface
 func (pq CorePriorityQueue[T]) Less(i, j int) bool {
-	return pq[i].Priority > pq[j].Priority
+	return pq.items[i].Priority > pq.items[j].Priority
 }
 
 // Swap is used to swap two items in the heap
 // It is needed to implement the heap.Interface
 func (pq CorePriorityQueue[T]) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].Index = i
-	pq[j].Index = j
+	pq.items[i], pq.items[j] = pq.items[j], pq.items[i]
+	pq.items[i].Index = i
+	pq.items[j].Index = j
 }
 
 // EnQueue adds an item to the heap and the end of the array
 func (pq *CorePriorityQueue[T]) EnQueue(data schema.Item[T]) {
-	n := len(*pq)
+	n := len(pq.items)
 	item := data
 	item.Index = n
-	*pq = append(*pq, &item)
+	pq.items = append(pq.items, &item)
 }
 
 // DeQueue removes the first item from the heap
 func (pq *CorePriorityQueue[T]) DeQueue() (priority int64, data T, err error) {
 
-	if len(*pq) == 0 {
+	if len(pq.items) == 0 {
 		return -1, data, errors.New("No items in the queue")
 	}
 
-	old := *pq
+	old := pq.items
 	n := len(old)
 	item := old[n-1]
 	old[n-1] = nil  // avoid memory leak
 	item.Index = -1 // for safety
-	*pq = old[0 : n-1]
+	pq.items = old[0 : n-1]
 	return item.Priority, item.Data, nil
 }
 
 func (pq CorePriorityQueue[T]) Peek() (data T, err error) {
-	if len(pq) == 0 {
+	if len(pq.items) == 0 {
 		return data, errors.New("No items in the queue")
 	}
-	return pq[0].Data, nil
+	return pq.items[0].Data, nil
 }
 
 func (pq CorePriorityQueue[T]) ReadPointers() []*schema.Item[T] {
-	return pq
+	return pq.items
 }
 
 // UpdatePriority modifies the priority of an Item in the queue.
 func (pq *CorePriorityQueue[T]) UpdatePriority(item *schema.Item[T], priority int64) {
 	item.Priority = priority
 	gheap.Prioritize[T](pq, item.Index)
-}
-
-// UpdateData modifies the data of an Item in the queue.
-func (pq *CorePriorityQueue[T]) UpdateData(item *schema.Item[T], data T) {
-	item.Data = data
 }
 
 func (pq *CorePriorityQueue[T]) Remove(item *schema.Item[T]) {
