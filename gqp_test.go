@@ -13,18 +13,15 @@ import (
 	"github.com/JustinTimperio/gpq"
 )
 
-type TestStruct struct {
-	ID   int
-	Name string
-}
-
 func TestGPQ(t *testing.T) {
 
 	var (
-		total    int  = 1000
-		print    bool = true
-		sent     uint64
-		received uint64
+		total      int  = 1000000
+		print      bool = false
+		syncToDisk bool = true
+		retries    int  = 10
+		sent       uint64
+		received   uint64
 	)
 
 	// Create a pprof file
@@ -66,7 +63,7 @@ func TestGPQ(t *testing.T) {
 		}
 	}()
 
-	queue, err := gpq.NewGPQ[int](10, true, "/tmp/gpq/")
+	queue, err := gpq.NewGPQ[int](10, syncToDisk, "/tmp/gpq/")
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -107,30 +104,36 @@ func TestGPQ(t *testing.T) {
 
 		var lastPriority int64
 
-		for total > int(received) {
-			timer := time.Now()
-			priority, item, err := queue.DeQueue()
-			if err != nil {
-				log.Println(sent, missed+hits, err)
-				time.Sleep(10 * time.Millisecond)
-				lastPriority = 0
-				continue
-			}
-			received++
-			if print {
-				log.Println("DeQueue", priority, received, item, time.Since(timer))
-			}
+		for i := 0; i < retries; i++ {
+			for atomic.LoadUint64(&queue.TotalLen) > 0 {
+				timer := time.Now()
+				priority, item, err := queue.DeQueue()
+				if err != nil {
+					log.Println(sent, missed+hits, err)
+					time.Sleep(10 * time.Millisecond)
+					lastPriority = 0
+					continue
+				}
+				received++
+				if print {
+					log.Println("DeQueue", priority, received, item, time.Since(timer))
+				}
 
-			if lastPriority > priority {
-				missed++
-			} else {
-				hits++
+				if lastPriority > priority {
+					missed++
+				} else {
+					hits++
+				}
+				lastPriority = priority
 			}
-			lastPriority = priority
+			time.Sleep(10 * time.Millisecond)
 		}
 	}()
 
 	wg.Wait()
 	log.Println("Sent", sent, "Received", received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
+
+	// Wait for all db sessions to sync to disk
+	queue.ActiveDBSessions.Wait()
 
 }

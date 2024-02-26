@@ -31,6 +31,9 @@ type GPQ[d any] struct {
 	NonEmptyBuckets *BucketPriorityQueue[d]
 	// NonEmptyBucketsMutex is a mutex for the non-empty buckets
 	NonEmptyBucketsMutex *sync.Mutex
+	// ActiveDBSessions is a wait group for active disk cache sessions
+	// It allows for items to be removed from the disk cache without waiting for a full disk sync
+	ActiveDBSessions *sync.WaitGroup
 	// DiskCache is a badgerDB used to store items in the GPQ
 	DiskCache *badger.DB
 	// IsDiskCacheEnabled is a boolean that indicates if the disk cache is enabled
@@ -51,6 +54,7 @@ func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string) (*GPQ
 		NonEmptyBuckets:      bp,
 		DiskCacheEnabled:     diskCache,
 		NonEmptyBucketsMutex: &sync.Mutex{},
+		ActiveDBSessions:     &sync.WaitGroup{},
 	}
 
 	for i := 0; i < NumOfBuckets; i++ {
@@ -71,6 +75,66 @@ func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string) (*GPQ
 			return nil, err
 		}
 		gpq.DiskCache = db
+		var reEnqueued uint64
+
+		// Re-add items to the GPQ from the disk cache
+		err = gpq.DiskCache.View(func(txn *badger.Txn) error {
+			opts := badger.DefaultIteratorOptions
+			opts.PrefetchValues = false
+			it := txn.NewIterator(opts)
+			defer it.Close()
+
+			for it.Rewind(); it.Valid(); it.Next() {
+				var value []byte
+				item := it.Item()
+				key := item.Key()
+
+				// Get the item from the disk cache
+				item, err := txn.Get(key)
+				if err != nil {
+					return err
+				}
+
+				// Get the item stored in the disk cache
+				item.Value(func(val []byte) error {
+					value = append([]byte{}, val...)
+					return nil
+				})
+
+				// Decode the item
+				var buf bytes.Buffer
+				buf.Write(value)
+				obj := schema.Item[d]{}
+				err = gob.NewDecoder(&buf).Decode(&obj)
+				if err != nil {
+					return err
+				}
+
+				// Re-enqueue the item with the same parameters it had when it was enqueued
+				// This whole process is slow since we need remove the item from the disk cache
+				// And then re-enqueue it into the GPQ which is itself another disk cache write operation
+				err = gpq.EnQueue(obj.Data, obj.Priority, obj.ShouldEscalate, obj.EscalationRate, obj.CanTimeout, obj.Timeout)
+				if err != nil {
+					return err
+				}
+
+				// Delete the item from the disk cache
+				err = gpq.DiskCache.Update(func(txn *badger.Txn) error {
+					return txn.Delete(key)
+				})
+				if err != nil {
+					return err
+				}
+
+				reEnqueued++
+			}
+
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+
 	} else {
 		gpq.DiskCache = nil
 	}
@@ -105,18 +169,24 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalation
 	pq, _ := g.Buckets.Get(priorityBucket)
 
 	if !g.DiskCacheEnabled {
-		// Enqueue the item
+		// Enqueue the item directly into the priority bucket
 		mutex.Lock()
 		pq.EnQueue(obj)
 		mutex.Unlock()
 	} else {
+
+		// Generate a UUID for the item
 		key, err := uuid.New().MarshalBinary()
 		if err != nil {
 			return err
 		}
+
+		obj.DiskUUID = key
+
+		// Encode the item
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
-		err = enc.Encode(data)
+		err = enc.Encode(obj)
 		if err != nil {
 			return err
 		}
@@ -129,8 +199,8 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalation
 		if err != nil {
 			return err
 		}
-		obj.DiskUUID = key
 
+		// Enqueue the items UUID
 		mutex.Lock()
 		pq.EnQueue(obj)
 		mutex.Unlock()
@@ -176,11 +246,17 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 		if !g.DiskCacheEnabled {
 			// Dequeue the item
 			mutex.Lock()
-			_, p, item, e := pq.DeQueue()
+			_, p, item, err := pq.DeQueue()
 			mutex.Unlock()
 			data = item
 			priority = p
-			err = e
+
+			if err != nil {
+				g.NonEmptyBucketsMutex.Lock()
+				g.NonEmptyBuckets.Remove(priorityBucket)
+				g.NonEmptyBucketsMutex.Unlock()
+				continue
+			}
 
 		} else {
 			// Get the item from the disk cache
@@ -212,18 +288,27 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 			if err != nil {
 				return -1, data, err
 			}
-			err = g.DiskCache.Update(func(txn *badger.Txn) error {
-				return txn.Delete(key)
-			})
-			if err != nil {
-				return -1, data, err
-			}
+
 			var buf bytes.Buffer
 			buf.Write(value)
-			err = gob.NewDecoder(&buf).Decode(&data)
+			obj := schema.Item[d]{}
+			err = gob.NewDecoder(&buf).Decode(&obj)
 			if err != nil {
 				return -1, data, err
 			}
+			data = obj.Data
+
+			// Lazily delete the item from the disk cache
+			g.ActiveDBSessions.Add(1)
+			go func() {
+				defer g.ActiveDBSessions.Done()
+
+				// Delete the item from the disk cache
+				g.DiskCache.Update(func(txn *badger.Txn) error {
+					return txn.Delete(key)
+				})
+
+			}()
 		}
 
 		// Decrement the length of the priority bucket and the total length
@@ -251,18 +336,17 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 
 		go func(bucketID int64) {
 			defer wg.Done()
-
-			pq, ok := g.Buckets.Get(bucketID)
-			if !ok {
-				errCh <- errors.New("Priority bucket does not exist")
-				return
-			}
+			mutex, _ := g.BucketMutexMap.Get(bucketID)
+			pq, _ := g.Buckets.Get(bucketID)
 
 			_, err := pq.Peek()
 			if err != nil {
 				errCh <- errors.New("No items to prioritize in heap: " + fmt.Sprintf("%d", bucketID))
 				return
 			}
+
+			mutex.Lock()
+			defer mutex.Unlock()
 
 			pointers := pq.ReadPointers()
 			evalTime := time.Now()
@@ -272,9 +356,23 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 				if pointer.CanTimeout {
 					duration := int(math.Abs(float64(pointer.SubmittedAt.Sub(evalTime).Milliseconds())))
 					if duration > int(pointer.Timeout.Milliseconds()) {
+
+						// Remove the item from the priority queue
 						pq.Remove(pointer)
 						atomic.AddUint64(&timedOutItems, 1)
-						continue
+
+						// Remove the item from the disk cache
+						if g.DiskCacheEnabled {
+							g.ActiveDBSessions.Add(1)
+							go func() {
+								defer g.ActiveDBSessions.Done()
+								g.DiskCache.Update(func(txn *badger.Txn) error {
+									return txn.Delete(pointer.DiskUUID)
+								})
+							}()
+
+							continue
+						}
 					}
 				}
 
