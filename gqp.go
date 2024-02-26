@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq/schema"
-	"github.com/alphadose/haxmap"
+	"github.com/cornelk/hashmap"
 )
 
 // GPQ is a priority queue that supports priority escalation
@@ -17,12 +17,12 @@ type GPQ[d any] struct {
 	// TotalLen is the total length of the GPQ
 	TotalLen uint64
 	// Buckets is a map of priority buckets
-	Buckets *haxmap.Map[int64, *CorePriorityQueue[d]]
+	Buckets *hashmap.Map[int64, *CorePriorityQueue[d]]
 	// MutexMap is a map of mutexes for each priority bucket
 	// This is used to lock the priority bucket when enqueuing and dequeuing
-	BucketMutexMap *haxmap.Map[int64, *sync.Mutex]
+	BucketMutexMap *hashmap.Map[int64, *sync.Mutex]
 	// LenMap is a map of the length of each priority bucket
-	BucketsLenMap *haxmap.Map[int64, uint64]
+	BucketsLenMap *hashmap.Map[int64, uint64]
 	// NonEmptyBuckets is a priority queue of non-empty buckets
 	NonEmptyBuckets *BucketPriorityQueue[d]
 }
@@ -35,14 +35,14 @@ func NewGPQ[d any](NumOfBuckets int) *GPQ[d] {
 	bp := NewBucketPriorityQueue[d]()
 
 	gpq := &GPQ[d]{
-		Buckets:         haxmap.New[int64, *CorePriorityQueue[d]](),
-		BucketsLenMap:   haxmap.New[int64, uint64](),
-		BucketMutexMap:  haxmap.New[int64, *sync.Mutex](),
+		Buckets:         hashmap.New[int64, *CorePriorityQueue[d]](),
+		BucketsLenMap:   hashmap.New[int64, uint64](),
+		BucketMutexMap:  hashmap.New[int64, *sync.Mutex](),
 		NonEmptyBuckets: bp,
 	}
 
 	for i := 0; i < NumOfBuckets; i++ {
-		pq := make(CorePriorityQueue[d], 0)
+		pq := NewCorePriorityQueue[d]()
 		gpq.Buckets.Set(int64(i), &pq)
 		gpq.BucketsLenMap.Set(int64(i), 0)
 		gpq.BucketMutexMap.Set(int64(i), &sync.Mutex{})
@@ -131,10 +131,10 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 			return -1, data, errors.New("Priority bucket does not exist")
 		}
 
-		mutex.Lock()
-		defer mutex.Unlock()
 		// Dequeue the item
+		mutex.Lock()
 		priority, item, err := pq.DeQueue()
+		mutex.Unlock()
 		if err != nil {
 			g.NonEmptyBuckets.Remove(priorityBucket)
 			continue
