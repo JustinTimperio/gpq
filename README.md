@@ -3,7 +3,7 @@
 </p>
 
 <h4 align="center">
-	GPQ is an extremely fast and flexible priority queue, capable of supporting a few million transactions a second on most hardware. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on a parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
+	GPQ is an extremely fast and flexible priority queue, capable of a few million transactions a second when run in RAM and tens of thousands of transactions a second when synced to disk. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on a parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
 </h4>
 
 
@@ -38,7 +38,7 @@ Due to the fact that most operations are done in constant time `O(1)` or logarit
 ## Usage
 
 ### Prerequisites 
-For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github.com/cornelk/hashmap). 
+For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github.com/cornelk/hashmap) and [BadgerDB](https://github.com/dgraph-io/badger). 
 
 ### Import Directly
 GPQ is primarily a embeddable priority queue meant to be used at the core of critical workloads that require complex queueing and delivery order guarantees. The best way to use it is just to import it.
@@ -59,7 +59,7 @@ import "github.com/JustinTimperio/gpq"
 Once you have an initialized queue you can easily submit items like the following:
 ```go
 
-queue := gpq.NewGPQ[int](10)
+queue := gpq.NewGPQ[int](10, false, "/path/for/disk/sync")
 
 var (
 	data int = 1
@@ -99,26 +99,32 @@ type TestStruct struct {
 func main() {
 
 	var (
-		total    int  = 10000000
-		print    bool = false
-		sent     uint64
-		received uint64
+		total    	int  = 1000
+		print    	bool = false
+		syncToDisk  bool = true
+		retries     int  = 10
+		sent     	uint64
+		received 	uint64
+	 	missed 	 	int64
+	 	hits     	int64
 	)
+	queue, err := gpq.NewGPQ[int](10, syncToDisk, "/tmp/gpq/")
+	if err != nil {
+		log.Fatalln(err)
+	}
 
-	queue := gpq.NewGPQ[TestStruct](10)
 	wg := &sync.WaitGroup{}
-	wg.Add(17)
+	wg.Add(21)
 
 	timer := time.Now()
-	for i := 0; i < 16; i++ {
+	for i := 0; i < 20; i++ {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < total/16; i++ {
-				r := rand.Int()
-				p := rand.Intn(10)
+			for i := 0; i < total/20; i++ {
+				p := i % 10
 				timer := time.Now()
 				err := queue.EnQueue(
-					TestStruct{ID: r, Name: "Test-" + fmt.Sprintf("%d", r)},
+					i,
 					int64(p),
 					true,
 					time.Duration(time.Second),
@@ -136,39 +142,42 @@ func main() {
 		}()
 	}
 
-	var missed int64
-	var hits int64
 
 	go func() {
 		defer wg.Done()
 
 		var lastPriority int64
+		for i := 0; i < retries; i++ {
+			for atomic.LoadUint64(&queue.TotalLen) > 0 {
+				timer := time.Now()
+				priority, item, err := queue.DeQueue()
+				if err != nil {
+					log.Println(sent, missed+hits, err)
+					time.Sleep(10 * time.Millisecond)
+					lastPriority = 0
+					continue
+				}
+				received++
+				if print {
+					log.Println("DeQueue", priority, received, item, time.Since(timer))
+				}
 
-		for total > int(received) {
-			timer := time.Now()
-			priority, item, err := queue.DeQueue()
-			if err != nil {
-				log.Println(err)
-				time.Sleep(10 * time.Millisecond)
-				lastPriority = 0
-				continue
+				if lastPriority > priority {
+					missed++
+				} else {
+					hits++
+				}
+				lastPriority = priority
 			}
-			received++
-			if print {
-				log.Println("DeQueue", priority, received, item, time.Since(timer))
-			}
-
-			if lastPriority > priority {
-				missed++
-			} else {
-				hits++
-			}
-			lastPriority = priority
+			time.Sleep(10 * time.Millisecond)
 		}
 	}()
 
 	wg.Wait()
 	log.Println("Sent", sent, "Received", received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
+
+	// Wait for all db sessions to sync to disk
+	queue.ActiveDBSessions.Wait()
 }
 ```
 
