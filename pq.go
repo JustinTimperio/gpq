@@ -2,6 +2,7 @@ package gpq
 
 import (
 	"errors"
+	"sync"
 
 	"github.com/JustinTimperio/gpq/gheap"
 	"github.com/JustinTimperio/gpq/schema"
@@ -10,11 +11,15 @@ import (
 // A PriorityQueue implements heap.Interface and holds Items.
 type CorePriorityQueue[T any] struct {
 	items []*schema.Item[T]
+	mutex *sync.RWMutex
+	bpq   *BucketPriorityQueue
 }
 
-func NewCorePriorityQueue[T any]() CorePriorityQueue[T] {
+func NewCorePriorityQueue[T any](bpq *BucketPriorityQueue) CorePriorityQueue[T] {
 	return CorePriorityQueue[T]{
 		items: make([]*schema.Item[T], 0),
+		mutex: &sync.RWMutex{},
+		bpq:   bpq,
 	}
 }
 
@@ -40,17 +45,26 @@ func (pq CorePriorityQueue[T]) Swap(i, j int) {
 
 // EnQueue adds an item to the heap and the end of the array
 func (pq *CorePriorityQueue[T]) EnQueue(data schema.Item[T]) {
+	pq.mutex.Lock()
+	defer pq.mutex.Unlock()
+
 	n := len(pq.items)
 	item := data
 	item.Index = n
 	pq.items = append(pq.items, &item)
+
+	if !pq.bpq.Contains(item.Priority) {
+		pq.bpq.Add(item.Priority)
+	}
 }
 
 // DeQueue removes the first item from the heap
 func (pq *CorePriorityQueue[T]) DeQueue() (diskUUID []byte, priority int64, data T, err error) {
+	pq.mutex.Lock()
+	defer pq.mutex.Unlock()
 
 	if len(pq.items) == 0 {
-		return nil, -1, data, errors.New("No items in the queue")
+		return nil, -1, data, errors.New("Core Priority Queue Error: No items found in the queue")
 	}
 
 	old := pq.items
@@ -59,10 +73,18 @@ func (pq *CorePriorityQueue[T]) DeQueue() (diskUUID []byte, priority int64, data
 	old[n-1] = nil  // avoid memory leak
 	item.Index = -1 // for safety
 	pq.items = old[0 : n-1]
+
+	// Check if the bucket is now empty
+	if len(pq.items) == 0 {
+		pq.bpq.Remove(item.Priority)
+	}
+
 	return item.DiskUUID, item.Priority, item.Data, nil
 }
 
 func (pq CorePriorityQueue[T]) Peek() (data T, err error) {
+	pq.mutex.Lock()
+	defer pq.mutex.Unlock()
 	if len(pq.items) == 0 {
 		return data, errors.New("No items in the queue")
 	}
@@ -75,10 +97,14 @@ func (pq CorePriorityQueue[T]) ReadPointers() []*schema.Item[T] {
 
 // UpdatePriority modifies the priority of an Item in the queue.
 func (pq *CorePriorityQueue[T]) UpdatePriority(item *schema.Item[T], priority int64) {
+	pq.mutex.Lock()
+	defer pq.mutex.Unlock()
 	item.Priority = priority
 	gheap.Prioritize[T](pq, item.Index)
 }
 
 func (pq *CorePriorityQueue[T]) Remove(item *schema.Item[T]) {
+	pq.mutex.Lock()
+	defer pq.mutex.Unlock()
 	gheap.Remove[T](pq, item.Index)
 }

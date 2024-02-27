@@ -24,7 +24,9 @@ GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https
 - [rpq (Rust Priority Queue)](https://github.com/JustinTimperio/rpq)
 
 ## Benchmarks
-Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, and Go to measure GPQ's performance against the standard implementations of other languages. **While not a direct comparison, 10 million entries fully enqueued and dequeued takes about 3 seconds with Go/GPQ, 3 seconds with Rust, and about 8 seconds for C++**. (Happy to have someone who knows C++ or Rust comment here)
+Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, and Go to measure GPQ's performance against the standard implementations of other languages. 
+
+**While not a direct comparison, 10 million entries fully enqueued and dequeued (WITHOUT multiple routines) takes about 3.5 seconds with Go/GPQ, 6 seconds with Rust, and about 9 seconds for C++**. (Happy to have someone who knows C++ or Rust comment here and update what I have in [bench](https://github.com/JustinTimperio/gpq/tree/master/bench))
 
 
 <p align="center">

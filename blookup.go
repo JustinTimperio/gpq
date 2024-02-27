@@ -1,35 +1,45 @@
 package gpq
 
 import (
-	"github.com/cornelk/hashmap"
+	"sync"
+	"sync/atomic"
 )
+
+type Bucket struct {
+	BucketID   int64
+	Prev, Next *Bucket
+}
 
 // Bucket priority queue implementation.
 // This is used to keep track of non-empty buckets in the GPQ
 // This is a combination of a HashSet, doubly linked list, and a priority queue
 // to allow for O(1) removal of buckets and O(1) removal of items from the buckets
 // and O(1) addition of buckets and O(1) addition of items to the buckets
-type Bucket[d any] struct {
-	BucketID   int64
-	Prev, Next *Bucket[d]
+type BucketPriorityQueue struct {
+	ActiveBuckets  int64
+	BucketIDs      map[int64]*Bucket
+	First, Last    *Bucket
+	LastRemoved    int64
+	ObjectsInQueue uint64
+	mutex          *sync.Mutex
 }
 
-type BucketPriorityQueue[d any] struct {
-	BucketIDs   *hashmap.Map[int64, *Bucket[d]]
-	First, Last *Bucket[d]
-}
-
-func NewBucketPriorityQueue[d any]() *BucketPriorityQueue[d] {
-	return &BucketPriorityQueue[d]{
-		BucketIDs: hashmap.New[int64, *Bucket[d]](),
+func NewBucketPriorityQueue() *BucketPriorityQueue {
+	return &BucketPriorityQueue{
+		ActiveBuckets:  0,
+		ObjectsInQueue: 0,
+		BucketIDs:      make(map[int64]*Bucket),
+		mutex:          &sync.Mutex{},
 	}
 }
 
-func (pq *BucketPriorityQueue[d]) Len() int {
-	return int(pq.BucketIDs.Len())
+func (pq *BucketPriorityQueue) Len() *int64 {
+	return &pq.ActiveBuckets
 }
 
-func (pq *BucketPriorityQueue[d]) Peek() (bucketID int64, exists bool) {
+func (pq *BucketPriorityQueue) Peek() (bucketID int64, exists bool) {
+	pq.mutex.Lock()
+	defer pq.mutex.Unlock()
 
 	if pq.First == nil {
 		return 0, false
@@ -37,13 +47,15 @@ func (pq *BucketPriorityQueue[d]) Peek() (bucketID int64, exists bool) {
 	return pq.First.BucketID, true
 }
 
-func (pq *BucketPriorityQueue[d]) Add(bucketID int64) {
-	if _, exists := pq.BucketIDs.Get(bucketID); exists {
+func (pq *BucketPriorityQueue) Add(bucketID int64) {
+	pq.mutex.Lock()
+	defer pq.mutex.Unlock()
+
+	if _, exists := pq.BucketIDs[bucketID]; exists {
 		return
 	}
 
-	newBucket := &Bucket[d]{BucketID: bucketID}
-	pq.BucketIDs.Set(bucketID, newBucket)
+	newBucket := &Bucket{BucketID: bucketID}
 
 	if pq.First == nil {
 		pq.First = newBucket
@@ -68,10 +80,17 @@ func (pq *BucketPriorityQueue[d]) Add(bucketID int64) {
 			current.Prev = newBucket
 		}
 	}
+
+	pq.BucketIDs[bucketID] = newBucket
+	atomic.AddUint64(&pq.ObjectsInQueue, 1)
+	atomic.AddInt64(&pq.ActiveBuckets, 1)
 }
 
-func (pq *BucketPriorityQueue[d]) Remove(bucketID int64) {
-	bucket, exists := pq.BucketIDs.Get(bucketID)
+func (pq *BucketPriorityQueue) Remove(bucketID int64) {
+	pq.mutex.Lock()
+	defer pq.mutex.Unlock()
+
+	bucket, exists := pq.BucketIDs[bucketID]
 	if !exists {
 		return
 	}
@@ -85,10 +104,16 @@ func (pq *BucketPriorityQueue[d]) Remove(bucketID int64) {
 	} else {
 		pq.Last = bucket.Prev
 	}
-	pq.BucketIDs.Del(bucketID)
+	delete(pq.BucketIDs, bucketID)
+	atomic.AddUint64(&pq.ObjectsInQueue, ^uint64(0))
+	atomic.AddInt64(&pq.ActiveBuckets, -1)
+	atomic.StoreInt64(&pq.LastRemoved, bucketID)
 }
 
-func (pq *BucketPriorityQueue[d]) Contains(bucketID int64) bool {
-	_, exists := pq.BucketIDs.Get(bucketID)
+func (pq *BucketPriorityQueue) Contains(bucketID int64) bool {
+	pq.mutex.Lock()
+	defer pq.mutex.Unlock()
+
+	_, exists := pq.BucketIDs[bucketID]
 	return exists
 }

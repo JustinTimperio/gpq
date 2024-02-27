@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -16,15 +15,10 @@ import (
 	"github.com/JustinTimperio/gpq"
 )
 
-type TestStruct struct {
-	ID   int
-	Name string
-}
-
 var (
 	maxTotal    int  = 10000000
-	prioritize  bool = true
 	print       bool = false
+	retries     int  = 5
 	nMaxBuckets int  = 100
 )
 
@@ -34,6 +28,13 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
+
+	iter(true)
+	iter(false)
+
+}
+
+func iter(prioritize bool) {
 
 	var name = "bench-report-no-repro.csv"
 	if prioritize {
@@ -59,7 +60,7 @@ func main() {
 	// Test the bench function for each million entries up to maxTotal
 	for total := 1000000; total <= maxTotal; total += 1000000 {
 		// Test the bench function for each increment of 10 buckets
-		for buckets := 10; buckets <= nMaxBuckets; buckets += 10 {
+		for buckets := 5; buckets <= nMaxBuckets; buckets += 5 {
 			log.Println("Starting test for", total, "entries and", buckets, "buckets")
 
 			// Reset the sent, received, and reprioritized counters
@@ -79,7 +80,6 @@ func main() {
 				t,
 				strconv.FormatUint(reprioritized, 10),
 			}
-			fmt.Println(stats)
 			writer.Write(stats)
 		}
 	}
@@ -88,7 +88,10 @@ func main() {
 func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, received *uint64, reprioritized *uint64) string {
 
 	// Create a new GPQ with a h-heap width of 100 using the TestStruct as the data type
-	queue := gpq.NewGPQ[TestStruct](nBuckets)
+	queue, err := gpq.NewGPQ[int](nBuckets, false, "/tmp/gpq/")
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	// If you want to prioritize the queue, start the prioritize function
 	// This will move items to the front of the queue if they have been waiting too long
@@ -109,86 +112,78 @@ func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, r
 		}()
 	}
 
-	// Set up the wait group
 	wg := &sync.WaitGroup{}
+
+	wg.Add(10)
 	timer := time.Now()
-
-	// Launch 4 senders to simulate multiple incoming streams of data
-	wg.Add(4)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 10; i++ {
 		go func() {
 			defer wg.Done()
-			sender(queue, total/4, sent, nBuckets)
+			for i := 0; i < total/10; i++ {
+				p := i % nBuckets
+				timer := time.Now()
+				err := queue.EnQueue(
+					i,
+					int64(p),
+					true,
+					time.Duration(10*time.Millisecond),
+					true,
+					time.Duration(time.Second*10),
+				)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				if print {
+					log.Println("EnQueue", p, time.Since(timer))
+				}
+				atomic.AddUint64(sent, 1)
+			}
 		}()
 	}
 
-	// Launch a receiver to simulate 2 consumers acting asynchronously
-	wg.Add(2)
-	for i := 0; i < 2; i++ {
-		go func() {
-			defer wg.Done()
-			receiver(queue, total, received)
-		}()
-	}
+	var missed int64
+	var hits int64
 
-	// Wait for all the senders and receivers to finish
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		var lastPriority int64
+
+		for i := 0; i < retries; i++ {
+			for total > int(*received) {
+				timer := time.Now()
+				priority, item, err := queue.DeQueue()
+				if err != nil {
+					lastPriority = 0
+					continue
+				}
+				i = retries
+
+				atomic.AddUint64(received, 1)
+
+				if print {
+					log.Println("DeQueue", priority, received, item, time.Since(timer))
+				}
+
+				if lastPriority > priority {
+					atomic.AddInt64(&missed, 1)
+				} else {
+					atomic.AddInt64(&hits, 1)
+				}
+				lastPriority = priority
+			}
+
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
 	wg.Wait()
 
-	// Print the results
-	log.Println(
-		"Sent:", *sent,
-		"Received:", *received,
-		"Finished in:", time.Since(timer),
-		"Reprioritized:", *reprioritized,
-	)
+	log.Println("Sent", *sent, "Received", *received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits, "Reprioritized", *reprioritized)
 
+	// Wait for all db sessions to sync to disk
+	queue.ActiveDBSessions.Wait()
 	return fmt.Sprintf("%d", time.Since(timer).Milliseconds())
 
-}
-
-func receiver(queue *gpq.GPQ[TestStruct], total int, received *uint64) {
-	var lastPriority int64
-	for total > int(*received) {
-		timer := time.Now()
-		priority, item, err := queue.DeQueue()
-		if err != nil {
-			if print {
-				log.Println(err)
-			}
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		atomic.AddUint64(received, 1)
-
-		if print {
-			log.Println("DeQueue", priority, item, time.Since(timer), "Total:", received)
-		}
-		if lastPriority > priority {
-			log.Fatalln("Priority out of order")
-		}
-	}
-}
-
-func sender(queue *gpq.GPQ[TestStruct], total int, sent *uint64, buckets int) {
-	for i := 0; i < total; i++ {
-		r := rand.Int()
-		p := rand.Intn(buckets)
-		timer := time.Now()
-		err := queue.EnQueue(TestStruct{
-			ID:   r,
-			Name: "Test-" + fmt.Sprintf("%d", r)},
-			int64(p),
-			false,
-			10*time.Millisecond,
-			false,
-			10*time.Second,
-		)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		if print {
-			log.Println("EnQueue", p, time.Since(timer), "Total:", sent)
-		}
-		atomic.AddUint64(sent, 1)
-	}
 }
