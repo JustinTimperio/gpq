@@ -16,9 +16,9 @@ import (
 func TestGPQ(t *testing.T) {
 
 	var (
-		total      int  = 1000000
+		total      int  = 10000000
 		print      bool = false
-		syncToDisk bool = true
+		syncToDisk bool = false
 		retries    int  = 10
 		sent       uint64
 		received   uint64
@@ -68,13 +68,13 @@ func TestGPQ(t *testing.T) {
 		log.Fatalln(err)
 	}
 	wg := &sync.WaitGroup{}
-	wg.Add(21)
 
 	timer := time.Now()
-	for i := 0; i < 20; i++ {
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < total/20; i++ {
+			for i := 0; i < total/10; i++ {
 				p := i % 10
 				timer := time.Now()
 				err := queue.EnQueue(
@@ -99,36 +99,42 @@ func TestGPQ(t *testing.T) {
 	var missed int64
 	var hits int64
 
-	go func() {
-		defer wg.Done()
+	wg.Add(1)
+	for i := 0; i < 1; i++ {
+		go func() {
+			defer wg.Done()
 
-		var lastPriority int64
+			var lastPriority int64
 
-		for i := 0; i < retries; i++ {
-			for atomic.LoadUint64(&queue.TotalLen) > 0 {
-				timer := time.Now()
-				priority, item, err := queue.DeQueue()
-				if err != nil {
-					log.Println(sent, missed+hits, err)
-					time.Sleep(10 * time.Millisecond)
-					lastPriority = 0
-					continue
-				}
-				received++
-				if print {
-					log.Println("DeQueue", priority, received, item, time.Since(timer))
-				}
+			for i := 0; i < retries; i++ {
+				for uint64(total) > received {
+					timer := time.Now()
+					priority, item, err := queue.DeQueue()
+					if err != nil {
+						if print {
+							log.Println("Hits", hits, "Misses", missed, "Sent", sent, "Recived", missed+hits, err)
+						}
+						time.Sleep(10 * time.Millisecond)
+						lastPriority = 0
+						continue
+					}
+					atomic.AddUint64(&received, 1)
+					if print {
+						log.Println("DeQueue", priority, received, item, time.Since(timer))
+					}
 
-				if lastPriority > priority {
-					missed++
-				} else {
-					hits++
+					if lastPriority > priority {
+						missed++
+					} else {
+						hits++
+					}
+					lastPriority = priority
 				}
-				lastPriority = priority
+				time.Sleep(10 * time.Millisecond)
+				log.Println("Retrying", i)
 			}
-			time.Sleep(10 * time.Millisecond)
-		}
-	}()
+		}()
+	}
 
 	wg.Wait()
 	log.Println("Sent", sent, "Received", received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
