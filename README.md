@@ -3,7 +3,7 @@
 </p>
 
 <h4 align="center">
-	GPQ is an extremely fast and flexible priority queue, capable of a few million transactions a second when run in RAM and tens of thousands of transactions a second when synced to disk. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on a parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
+	GPQ is an extremely fast and flexible priority queue, capable of a few million transactions a second when run in RAM and tens of thousands of transactions a second when synced to disk. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
 </h4>
 
 
@@ -24,15 +24,15 @@ GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https
 - [rpq (Rust Priority Queue)](https://github.com/JustinTimperio/rpq)
 
 ## Benchmarks
-Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, and Go to measure GPQ's performance against the standard implementations of other languages. 
+Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, Zig, and Go to measure GPQ's performance against the standard implementations of other languages. 
 
-**While not a direct comparison, 10 million entries fully enqueued and dequeued (WITHOUT multiple routines) takes about 3.5 seconds with Go/GPQ, 6 seconds with Rust, and about 9 seconds for C++**. (Happy to have someone who knows C++ or Rust comment here and update what I have in [bench](https://github.com/JustinTimperio/gpq/tree/master/bench))
+**While not a direct comparison, 10 million entries fully enqueued and dequeued (WITHOUT multiple routines) takes about 3.5 seconds with Go/GPQ, 5.5 seconds with Zig, 6 seconds with Rust, and about 9 seconds for C++**. (Happy to have someone who knows C++ or Rust comment here and update what I have in [bench](https://github.com/JustinTimperio/gpq/tree/master/bench))
 
 
 <p align="center">
-  <img src="./docs/Reprioritize-All-Buckets-Every-100-Milliseconds-VS-No-Reprioritze.png">
-  <img src="./docs/Queue-Speed-WITH-Reprioritize.png">
   <img src="./docs/Queue-Speed-WITHOUT-Reprioritize.png">
+  <img src="./docs/Queue-Speed-WITH-Reprioritize.png">
+  <img src="./docs/Reprioritize-All-Buckets-Every-100-Milliseconds-VS-No-Reprioritze.png">
 </p>
 
 
@@ -100,15 +100,16 @@ type TestStruct struct {
 
 func main() {
 
+	// Set the options for the run
 	var (
-		total    	int  = 1000
-		print    	bool = false
-		syncToDisk  bool = true
-		retries     int  = 10
-		sent     	uint64
-		received 	uint64
-	 	missed 	 	int64
-	 	hits     	int64
+		total    	int  = 100000
+		print		bool = false
+		syncToDisk	bool = false 
+		retries		int  = 10
+		sent		uint64
+		received	uint64
+	 	missed		int64
+	 	hits		int64
 	)
 	queue, err := gpq.NewGPQ[int](10, syncToDisk, "/tmp/gpq/")
 	if err != nil {
@@ -118,6 +119,7 @@ func main() {
 	wg := &sync.WaitGroup{}
 	wg.Add(21)
 
+	// Simulate Many Writers
 	timer := time.Now()
 	for i := 0; i < 20; i++ {
 		go func() {
@@ -145,6 +147,7 @@ func main() {
 	}
 
 
+	// Simulate a single Reader
 	go func() {
 		defer wg.Done()
 
