@@ -9,6 +9,12 @@ import (
 	"go.uber.org/zap"
 )
 
+// Reserved words and keys
+var RESERVEDKEYSPREFIXES = []string{
+	"settings.topic.",
+	"settings.user.",
+}
+
 type RouteHandler struct {
 	WS             *echo.Echo
 	Topics         *hashmap.Map[string, *gpq.GPQ[[]byte]]

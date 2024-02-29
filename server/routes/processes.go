@@ -5,6 +5,7 @@ import (
 )
 
 // Prioritize reprioritizes the GPQ at the specified rate
+// It also can dynamically update its own settings
 func Prioritize(topicName string, gpqs *RouteHandler) {
 	gpqs.Logger.Infow("Starting to reprioritize daemon", "topic", topicName)
 

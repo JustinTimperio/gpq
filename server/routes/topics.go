@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/gob"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/JustinTimperio/gpq"
@@ -50,6 +52,13 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 		return echo.NewHTTPError(400, "Topic already exists")
 	}
 
+	// Verify that the name is not a reserved word
+	for _, word := range RESERVEDKEYSPREFIXES {
+		if strings.Contains(topic.Name, word) {
+			return echo.NewHTTPError(400, "Topic name contains a reserved word")
+		}
+	}
+
 	// Create a new GPQ
 	queue, err := gpq.NewGPQ[[]byte](topic.Buckets, topic.SyncToDisk, topic.DiskPath)
 	if err != nil {
@@ -85,6 +94,10 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 // RemoveTopic removes a topic from the hashmap
 func (rt RouteHandler) RemoveTopic(c echo.Context) error {
 	name := c.QueryParam("name")
+	if name == "" {
+		return echo.NewHTTPError(400, "No topic name provided")
+	}
+
 	_, exists := rt.Topics.Get(name)
 	if !exists {
 		return echo.NewHTTPError(400, "Topic not found")
@@ -104,9 +117,9 @@ func (rt RouteHandler) RemoveTopic(c echo.Context) error {
 // ListTopics lists all topics in the hashmap
 func (rt RouteHandler) ListTopics(c echo.Context) error {
 
-	topics := make(map[string]int64, rt.Topics.Len())
+	topics := make(map[string]uint64)
 	rt.Topics.Range(func(key string, value *gpq.GPQ[[]byte]) bool {
-		topics[key] = *value.NonEmptyBuckets.Len()
+		topics[key] = atomic.LoadUint64(&value.NonEmptyBuckets.ObjectsInQueue)
 		return true
 	})
 	return c.JSONPretty(200, topics, "  ")

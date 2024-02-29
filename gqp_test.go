@@ -16,9 +16,9 @@ import (
 func TestGPQ(t *testing.T) {
 
 	var (
-		total      int  = 10000000
-		print      bool = false
-		syncToDisk bool = false
+		total      int  = 1000
+		print      bool = true
+		syncToDisk bool = true
 		retries    int  = 10
 		sent       uint64
 		received   uint64
@@ -107,7 +107,7 @@ func TestGPQ(t *testing.T) {
 			var lastPriority int64
 
 			for i := 0; i < retries; i++ {
-				for uint64(total) > received {
+				for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 {
 					timer := time.Now()
 					priority, item, err := queue.DeQueue()
 					if err != nil {

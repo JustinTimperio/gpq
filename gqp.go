@@ -86,8 +86,6 @@ func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string) (*GPQ
 				if err != nil {
 					return err
 				}
-
-				// Get the item stored in the disk cache
 				item.Value(func(val []byte) error {
 					value = append([]byte{}, val...)
 					return nil
@@ -103,17 +101,7 @@ func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string) (*GPQ
 				}
 
 				// Re-enqueue the item with the same parameters it had when it was enqueued
-				// This whole process is slow since we need remove the item from the disk cache
-				// And then re-enqueue it into the GPQ which is itself another disk cache write operation
-				err = gpq.EnQueue(obj.Data, obj.Priority, obj.ShouldEscalate, obj.EscalationRate, obj.CanTimeout, obj.Timeout)
-				if err != nil {
-					return err
-				}
-
-				// Delete the item from the disk cache
-				err = gpq.DiskCache.Update(func(txn *badger.Txn) error {
-					return txn.Delete(key)
-				})
+				err = gpq.reQueue(obj.Data, obj.Priority, obj.ShouldEscalate, obj.EscalationRate, obj.CanTimeout, obj.Timeout, obj.DiskUUID)
 				if err != nil {
 					return err
 				}
@@ -186,6 +174,35 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalation
 		}
 
 	}
+
+	pq.EnQueue(obj)
+
+	return nil
+}
+
+// reQueue adds an item to the GPQ with a specific key restored from the disk cache
+func (g *GPQ[d]) reQueue(data d, priorityBucket int64, escalate bool, escalationRate time.Duration, canTimeout bool, timeout time.Duration, key []byte) error {
+
+	if priorityBucket > g.BucketCount {
+		return errors.New("Priority bucket does not exist")
+	}
+
+	// Create the item
+	obj := schema.Item[d]{
+		Data:           data,
+		Priority:       priorityBucket,
+		ShouldEscalate: escalate,
+		EscalationRate: escalationRate,
+		CanTimeout:     canTimeout,
+		Timeout:        timeout,
+		SubmittedAt:    time.Now(),
+		LastEscalated:  time.Now(),
+	}
+
+	pq, _ := g.Buckets.Get(priorityBucket)
+
+	// Send the item to the disk cache
+	obj.DiskUUID = key
 
 	pq.EnQueue(obj)
 

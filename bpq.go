@@ -82,7 +82,6 @@ func (pq *BucketPriorityQueue) Add(bucketID int64) {
 	}
 
 	pq.BucketIDs[bucketID] = newBucket
-	atomic.AddUint64(&pq.ObjectsInQueue, 1)
 	atomic.AddInt64(&pq.ActiveBuckets, 1)
 }
 
@@ -105,7 +104,6 @@ func (pq *BucketPriorityQueue) Remove(bucketID int64) {
 		pq.Last = bucket.Prev
 	}
 	delete(pq.BucketIDs, bucketID)
-	atomic.AddUint64(&pq.ObjectsInQueue, ^uint64(0))
 	atomic.AddInt64(&pq.ActiveBuckets, -1)
 	atomic.StoreInt64(&pq.LastRemoved, bucketID)
 }

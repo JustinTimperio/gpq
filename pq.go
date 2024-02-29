@@ -3,6 +3,7 @@ package gpq
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/JustinTimperio/gpq/gheap"
 	"github.com/JustinTimperio/gpq/schema"
@@ -53,6 +54,7 @@ func (pq *CorePriorityQueue[T]) EnQueue(data schema.Item[T]) {
 	item.Index = n
 	pq.items = append(pq.items, &item)
 
+	atomic.AddUint64(&pq.bpq.ObjectsInQueue, 1)
 	if !pq.bpq.Contains(item.Priority) {
 		pq.bpq.Add(item.Priority)
 	}
@@ -79,6 +81,7 @@ func (pq *CorePriorityQueue[T]) DeQueue() (diskUUID []byte, priority int64, data
 		pq.bpq.Remove(item.Priority)
 	}
 
+	atomic.AddUint64(&pq.bpq.ObjectsInQueue, ^uint64(0))
 	return item.DiskUUID, item.Priority, item.Data, nil
 }
 

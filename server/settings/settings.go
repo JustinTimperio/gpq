@@ -9,6 +9,7 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
+// Settings is the default configuration struct
 var Settings = &schema.Settings{
 	// Server
 	Port:     4040,
