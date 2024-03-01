@@ -1,12 +1,20 @@
 package settings
 
 import (
+	"os"
 	"strings"
 
 	"github.com/JustinTimperio/gpq/schema"
+	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
+)
+
+const (
+	BasePath = "/opt/gpq"
+	config   = "config.yaml"
 )
 
 // Settings is the default configuration struct
@@ -15,16 +23,16 @@ var Settings = &schema.Settings{
 	Port:     4040,
 	HostName: "localhost",
 	// Paths
-	LogPath:        "gpq.log",
-	SettingsDBPath: "/opt/gpq/gpq.db",
+	LogPath:        BasePath + "/gpq.log",
+	SettingsDBPath: BasePath + "/settings-db",
+	ConfigPath:     BasePath + "/" + config,
 
+	// Auth Settings
 	AuthTopics:     false,
-	AuthSettings:   true,
-	AuthManagement: true,
-
-	// Ding Ding
-	AdminUser: "admin",
-	AdminPass: "admin",
+	AuthSettings:   false,
+	AuthManagement: false,
+	AdminUser:      "admin",
+	AdminPass:      "admin",
 }
 
 func LoadSettings() error {
@@ -49,6 +57,12 @@ func LoadSettings() error {
 
 	if err != nil {
 		return err
+	}
+
+	if _, err := os.Stat(BasePath + config); err == nil {
+		if err := k.Load(file.Provider(BasePath+config), yaml.Parser()); err != nil {
+			return err
+		}
 	}
 
 	// Marshal Koanf map into config structs

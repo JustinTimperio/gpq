@@ -49,64 +49,19 @@ func main() {
 		Logger:         logger,
 	}
 
-	// Rebuild the Topics from the SettingsDB
-	err = gpqs.SettingsDB.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		prefix := []byte("topic.settings.")
+	// Rebuild the GPQs and ValidTokens from the SettingsDB
+	rebuildFromDB(&gpqs)
 
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			logger.Debugw("Rebuilding topic", "key", string(it.Item().Key()))
-			item := it.Item()
-			err := item.Value(func(v []byte) error {
-
-				// Decode the topic
-				var topic schema.Topic
-				var buf bytes.Buffer
-				buf.Write(v)
-				err = gob.NewDecoder(&buf).Decode(&topic)
-				if err != nil {
-					return err
-				}
-
-				// Create a new GPQ
-				queue, err := gpq.NewGPQ[[]byte](topic.Buckets, topic.SyncToDisk, topic.DiskPath)
-				if err != nil {
-					return err
-				}
-
-				// Add the queue to the hashmap
-				gpqs.Topics.Set(topic.Name, queue)
-				gpqs.TopicsSettings.Set(topic.Name, &topic)
-
-				// Start the reprioritization process
-				go routes.Prioritize(topic.Name, &gpqs)
-
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-
-		}
-		return nil
-	})
-	if err != nil {
-		logger.Fatalw("Failed to rebuild topics", "error", err)
-	}
-
-	// Readd the admin Token to the ValidTokens
+	// Add the admin user to the settings DB
+	// This is done every boot to ensure the password from the config is always used
 	if settings.Settings.AdminPass == "" {
 		logger.Fatalw("Admin password not set")
 	}
-
 	// Hash the admin password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(settings.Settings.AdminPass), bcrypt.DefaultCost)
 	if err != nil {
 		logger.Fatalw("Failed to hash admin password", "error", err)
 	}
-
 	// Add the admin user to the settings DB
 	err = gpqs.SettingsDB.Update(func(txn *badger.Txn) error {
 		_, err := txn.Get([]byte("auth.username." + settings.Settings.AdminUser))
@@ -115,12 +70,9 @@ func main() {
 		}
 		return txn.Set([]byte("auth.username."+settings.Settings.AdminUser), hashedPassword)
 	})
-
-	// Add the admin token to the ValidTokens
-	gpqs.ValidTokens.Set(settings.Settings.AdminUser, schema.Token{
-		Token:   string(hashedPassword),
-		Timeout: time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC),
-	})
+	if err != nil {
+		logger.Fatalw("Failed to set admin user", "error", err)
+	}
 
 	// Use Zap for Logging
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
@@ -178,4 +130,101 @@ func main() {
 	logger.Infow("Server starting...", "port", settings.Settings.Port, "host_name", settings.Settings.HostName)
 	e.Logger.Fatal(e.Start(settings.Settings.HostName + ":" + fmt.Sprintf("%d", settings.Settings.Port)))
 
+}
+
+// rebuildFromDB rebuilds the GPQs and ValidTokens from the SettingsDB
+func rebuildFromDB(gpqs *routes.RouteHandler) {
+	// Rebuild active tokens from the SettingsDB
+	err := gpqs.SettingsDB.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		prefix := []byte("auth.token.")
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			gpqs.Logger.Infow("Rebuilding token", "key", string(item.Key()))
+			err := item.Value(func(v []byte) error {
+				// Decode the token
+				var token schema.Token
+				var buf bytes.Buffer
+				buf.Write(v)
+				err := gob.NewDecoder(&buf).Decode(&token)
+				if err != nil {
+					return err
+				}
+
+				if token.Timeout.Before(time.Now()) {
+					// Remove the token from the valid tokens map and the database
+					err := gpqs.SettingsDB.Update(func(txn *badger.Txn) error {
+						err := txn.Delete([]byte("auth.token." + token.Token))
+						return err
+					})
+					if err != nil {
+						return err
+					}
+
+				} else {
+					gpqs.ValidTokens.Set(token.Token, token)
+				}
+
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	},
+	)
+	if err != nil {
+		gpqs.Logger.Fatalw("Failed to rebuild tokens", "error", err)
+	}
+
+	// Rebuild the Topics from the SettingsDB
+	err = gpqs.SettingsDB.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		prefix := []byte("topic.settings.")
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			gpqs.Logger.Infow("Rebuilding topic", "key", string(it.Item().Key()))
+			item := it.Item()
+			err := item.Value(func(v []byte) error {
+
+				// Decode the topic
+				var topic schema.Topic
+				var buf bytes.Buffer
+				buf.Write(v)
+				err = gob.NewDecoder(&buf).Decode(&topic)
+				if err != nil {
+					return err
+				}
+
+				// Create a new GPQ
+				queue, err := gpq.NewGPQ[[]byte](topic.Buckets, topic.SyncToDisk, topic.DiskPath)
+				if err != nil {
+					return err
+				}
+
+				// Add the queue to the hashmap
+				gpqs.Topics.Set(topic.Name, queue)
+				gpqs.TopicsSettings.Set(topic.Name, &topic)
+
+				// Start the reprioritization process
+				go routes.Prioritize(topic.Name, gpqs)
+
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+
+		}
+		return nil
+	})
+	if err != nil {
+		gpqs.Logger.Fatalw("Failed to rebuild topics", "error", err)
+	}
 }

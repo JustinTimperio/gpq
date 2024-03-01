@@ -30,6 +30,7 @@ type Credentials struct {
 type Token struct {
 	Token   string    `json:"token"`
 	Timeout time.Time `json:"timeout"`
+	IsAdmin bool      `json:"is_admin"`
 }
 
 type Settings struct {
@@ -39,6 +40,7 @@ type Settings struct {
 
 	// Paths
 	SettingsDBPath string `koanf:"settings_db_path"`
+	ConfigPath     string `koanf:"config_path"`
 	LogPath        string `koanf:"log_path"`
 
 	// Auth

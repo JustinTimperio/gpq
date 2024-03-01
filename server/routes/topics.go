@@ -67,6 +67,7 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 
 	// Add the queue to the hashmap
 	rt.Topics.Set(topic.Name, queue)
+	rt.TopicsSettings.Set(topic.Name, topic)
 
 	// Start the reprioritization process
 	go Prioritize(topic.Name, rt)
