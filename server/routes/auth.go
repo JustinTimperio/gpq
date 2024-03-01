@@ -54,9 +54,10 @@ func (rt *RouteHandler) Auth(c echo.Context) error {
 	// Create a new token
 	token := schema.Token{
 		// TODO: Generate a real token instead of a UUID
-		Token:   uuid.NewString(),
-		Timeout: time.Now().Add(time.Hour * 24),
-		IsAdmin: isAdmin,
+		Token:    uuid.NewString(),
+		Timeout:  time.Now().Add(time.Hour * 24),
+		IsAdmin:  isAdmin,
+		Username: creds.Username,
 	}
 
 	// Store the token in the database and the valid tokens map

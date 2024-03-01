@@ -28,9 +28,10 @@ type Credentials struct {
 }
 
 type Token struct {
-	Token   string    `json:"token"`
-	Timeout time.Time `json:"timeout"`
-	IsAdmin bool      `json:"is_admin"`
+	Token    string    `json:"token"`
+	Timeout  time.Time `json:"timeout"`
+	IsAdmin  bool      `json:"is_admin"`
+	Username string    `json:"username"`
 }
 
 type Settings struct {

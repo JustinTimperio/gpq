@@ -45,7 +45,13 @@ func (rt RouteHandler) RemoveUser(c echo.Context) error {
 			return echo.ErrForbidden
 		}
 
-		// TODO: Remove tokens associated with the user
+		// Remove tokens associated with the user
+		rt.ValidTokens.Range(func(k string, v schema.Token) bool {
+			if v.Username == c.Param("username") {
+				rt.ValidTokens.Del(k)
+			}
+			return true
+		})
 
 		// Get the user from the database
 		_, err := txn.Get([]byte("auth.username." + c.Param("username")))
