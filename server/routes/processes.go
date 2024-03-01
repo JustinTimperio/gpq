@@ -2,6 +2,11 @@ package routes
 
 import (
 	"time"
+
+	"github.com/JustinTimperio/gpq/server/settings"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Prioritize reprioritizes the GPQ at the specified rate
@@ -41,4 +46,49 @@ func Prioritize(topicName string, gpqs *RouteHandler) {
 			}
 		}
 	}
+}
+
+// generateAuthMiddleWare generates a middleware function that checks for a valid token
+func GenerateAuthMiddleWare(gpqs RouteHandler) echo.MiddlewareFunc {
+
+	return middleware.KeyAuth(func(key string, c echo.Context) (bool, error) {
+		token, ok := gpqs.ValidTokens.Get(key)
+		if !ok {
+			return false, echo.ErrForbidden
+		}
+		if token.Timeout.Before(time.Now()) {
+			gpqs.ValidTokens.Del(key)
+			return false, echo.ErrForbidden
+		}
+		return ok, nil
+	},
+	)
+}
+
+// generateAdminMiddleWare generates a middleware function that checks for a valid token
+func GenerateAdminMiddleWare(gpqs RouteHandler) echo.MiddlewareFunc {
+	return middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+
+		gpqs.Logger.Infow("Admin login attempt", "username", username)
+
+		if username != settings.Settings.AdminUser {
+			return false, echo.ErrForbidden
+		}
+
+		token, ok := gpqs.ValidTokens.Get(username)
+		if !ok {
+			return false, echo.ErrForbidden
+		}
+
+		if err := bcrypt.CompareHashAndPassword([]byte(token.Token), []byte(password)); err != nil {
+			return false, echo.ErrUnauthorized
+		}
+
+		if token.Timeout.Before(time.Now()) {
+			gpqs.ValidTokens.Del(username)
+			return false, echo.ErrForbidden
+		}
+		return ok, nil
+
+	})
 }

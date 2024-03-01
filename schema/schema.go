@@ -22,6 +22,16 @@ type Item[d any] struct {
 	Index         int
 }
 
+type Credentials struct {
+	Password string `json:"password"`
+	Username string `json:"username"`
+}
+
+type Token struct {
+	Token   string    `json:"token"`
+	Timeout time.Time `json:"timeout"`
+}
+
 type Settings struct {
 	// Server
 	Port     int    `koanf:"port"`
@@ -30,6 +40,11 @@ type Settings struct {
 	// Paths
 	SettingsDBPath string `koanf:"settings_db_path"`
 	LogPath        string `koanf:"log_path"`
+
+	// Auth
+	AuthTopics     bool `koanf:"auth_topics"`
+	AuthSettings   bool `koanf:"auth_settings"`
+	AuthManagement bool `koanf:"auth_management"`
 
 	// Admin
 	AdminUser string `koanf:"admin_user"`

@@ -20,7 +20,7 @@ type RouteHandler struct {
 	Topics         *hashmap.Map[string, *gpq.GPQ[[]byte]]
 	TopicsSettings *hashmap.Map[string, *schema.Topic]
 	Users          *hashmap.Map[string, *schema.User]
-	ValidTokens    *hashmap.Map[string, bool]
+	ValidTokens    *hashmap.Map[string, schema.Token]
 	SettingsDB     *badger.DB
 	Logger         *zap.SugaredLogger
 }

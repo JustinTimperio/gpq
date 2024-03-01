@@ -17,6 +17,11 @@ var Settings = &schema.Settings{
 	// Paths
 	LogPath:        "gpq.log",
 	SettingsDBPath: "/opt/gpq/gpq.db",
+
+	AuthTopics:     false,
+	AuthSettings:   true,
+	AuthManagement: true,
+
 	// Ding Ding
 	AdminUser: "admin",
 	AdminPass: "admin",

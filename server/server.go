@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	"time"
 
 	"github.com/JustinTimperio/gpq"
 	"github.com/JustinTimperio/gpq/schema"
 	"github.com/JustinTimperio/gpq/server/routes"
 	"github.com/JustinTimperio/gpq/server/settings"
 	"github.com/dgraph-io/badger/v4"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/cornelk/hashmap"
 	"github.com/labstack/echo/v4"
@@ -42,7 +44,7 @@ func main() {
 		Topics:         hashmap.New[string, *gpq.GPQ[[]byte]](),
 		TopicsSettings: hashmap.New[string, *schema.Topic](),
 		Users:          hashmap.New[string, *schema.User](),
-		ValidTokens:    hashmap.New[string, bool](),
+		ValidTokens:    hashmap.New[string, schema.Token](),
 		SettingsDB:     SettingsDB,
 		Logger:         logger,
 	}
@@ -55,6 +57,7 @@ func main() {
 		prefix := []byte("topic.settings.")
 
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			logger.Debugw("Rebuilding topic", "key", string(it.Item().Key()))
 			item := it.Item()
 			err := item.Value(func(v []byte) error {
 
@@ -93,19 +96,31 @@ func main() {
 		logger.Fatalw("Failed to rebuild topics", "error", err)
 	}
 
-	// Topic Routes
-	e.POST("/topic/:name/enqueue", gpqs.Enqueue)
-	e.GET("/topic/:name/dequeue", gpqs.Dequeue)
+	// Readd the admin Token to the ValidTokens
+	if settings.Settings.AdminPass == "" {
+		logger.Fatalw("Admin password not set")
+	}
 
-	// Topic Management Routes
-	e.GET("/settings/list_topics", gpqs.ListTopics)
-	e.POST("/settings/add_topic", gpqs.AddTopic)
-	e.POST("/settings/remove_topic", gpqs.RemoveTopic)
+	// Hash the admin password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(settings.Settings.AdminPass), bcrypt.DefaultCost)
+	if err != nil {
+		logger.Fatalw("Failed to hash admin password", "error", err)
+	}
 
-	// User Management Routes
-	e.POST("/settings/add_user", gpqs.AddUser)
-	e.POST("/settings/remove_user", gpqs.RemoveUser)
-	e.POST("/settings/update_user", gpqs.UpdateUser)
+	// Add the admin user to the settings DB
+	err = gpqs.SettingsDB.Update(func(txn *badger.Txn) error {
+		_, err := txn.Get([]byte("auth.username." + settings.Settings.AdminUser))
+		if err == nil {
+			return nil
+		}
+		return txn.Set([]byte("auth.username."+settings.Settings.AdminUser), hashedPassword)
+	})
+
+	// Add the admin token to the ValidTokens
+	gpqs.ValidTokens.Set(settings.Settings.AdminUser, schema.Token{
+		Token:   string(hashedPassword),
+		Timeout: time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC),
+	})
 
 	// Use Zap for Logging
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
@@ -127,6 +142,37 @@ func main() {
 			return nil
 		},
 	}))
+
+	// Public Routes
+	e.POST("/auth", gpqs.Auth)
+
+	// Define Route Groups
+	TopicRoutes := e.Group("/topic")
+	ManagementRoutes := e.Group("/management")
+	SettingsRoutes := e.Group("/settings")
+
+	// Topic Routes
+	if settings.Settings.AuthTopics {
+		TopicRoutes.Use(routes.GenerateAuthMiddleWare(gpqs))
+	}
+	TopicRoutes.GET("/list", gpqs.ListTopics)
+	TopicRoutes.POST("/:name/enqueue", gpqs.Enqueue)
+	TopicRoutes.GET("/:name/dequeue", gpqs.Dequeue)
+
+	// Topic Management Routes
+	if settings.Settings.AuthManagement {
+		ManagementRoutes.Use(routes.GenerateAuthMiddleWare(gpqs))
+	}
+	ManagementRoutes.POST("/add_topic", gpqs.AddTopic)
+	ManagementRoutes.POST("/remove_topic", gpqs.RemoveTopic)
+
+	// User Management Routes
+	// These routes are only accessible by the admin user
+	if settings.Settings.AuthSettings {
+		SettingsRoutes.Use(routes.GenerateAdminMiddleWare(gpqs))
+	}
+	SettingsRoutes.POST("/add_user", gpqs.AddUser)
+	SettingsRoutes.POST("/remove_user", gpqs.RemoveUser)
 
 	// Finally, start the server
 	logger.Infow("Server starting...", "port", settings.Settings.Port, "host_name", settings.Settings.HostName)
