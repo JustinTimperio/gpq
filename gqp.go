@@ -315,7 +315,6 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 				duration := int(math.Abs(float64(pointer.SubmittedAt.Sub(evalTime).Milliseconds())))
 				if duration > int(pointer.Timeout.Milliseconds()) {
 
-					fmt.Println("Item Timed Out:", pointer.Data, "Duration:", duration, "Timeout:", pointer.Timeout.Milliseconds())
 					// Remove the item from the priority queue
 					pq.Remove(pointer)
 					atomic.AddUint64(&timedOutItems, 1)

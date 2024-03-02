@@ -29,9 +29,9 @@ var Settings = &schema.Settings{
 	ConfigPath:     BasePath + "/" + config,
 
 	// Auth Settings
-	AuthTopics:     false,
-	AuthSettings:   false,
-	AuthManagement: false,
+	AuthTopics:     true,
+	AuthSettings:   true,
+	AuthManagement: true,
 	AdminUser:      "admin",
 	AdminPass:      "admin",
 }

@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Auth authenticates a user and returns a token
 func (rt *RouteHandler) Auth(c echo.Context) error {
 	// Parse and decode the request body into a new `Credentials` instance
 	creds := &schema.Credentials{}

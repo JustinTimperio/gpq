@@ -22,7 +22,10 @@ import (
 func main() {
 
 	// Create a Zap Logger
-	logger := zap.Must(zap.NewProduction()).Sugar()
+	cfg := zap.NewProductionConfig()
+	cfg.OutputPaths = []string{"stdout", settings.Settings.LogPath}
+
+	logger := zap.Must(cfg.Build()).Sugar()
 	defer logger.Sync()
 
 	// Load the Settings
