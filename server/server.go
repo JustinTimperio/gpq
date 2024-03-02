@@ -10,13 +10,13 @@ import (
 	"github.com/JustinTimperio/gpq/schema"
 	"github.com/JustinTimperio/gpq/server/routes"
 	"github.com/JustinTimperio/gpq/server/settings"
-	"github.com/dgraph-io/badger/v4"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/cornelk/hashmap"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {

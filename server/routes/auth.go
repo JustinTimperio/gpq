@@ -9,6 +9,7 @@ import (
 
 	"github.com/JustinTimperio/gpq/schema"
 	"github.com/JustinTimperio/gpq/server/settings"
+
 	"github.com/dgraph-io/badger/v4"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"

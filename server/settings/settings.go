@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/JustinTimperio/gpq/schema"
+
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"

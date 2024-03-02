@@ -5,6 +5,7 @@ import (
 
 	"github.com/JustinTimperio/gpq"
 	"github.com/JustinTimperio/gpq/schema"
+
 	"github.com/cornelk/hashmap"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/labstack/echo/v4"

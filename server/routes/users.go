@@ -6,6 +6,7 @@ import (
 
 	"github.com/JustinTimperio/gpq/schema"
 	"github.com/JustinTimperio/gpq/server/settings"
+
 	"github.com/dgraph-io/badger/v4"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/bcrypt"

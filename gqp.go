@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq/schema"
+
 	"github.com/cornelk/hashmap"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/google/uuid"
@@ -224,7 +225,7 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 	// This structure allows for O(1) access to the highest priority item
 	priorityBucket, exists := g.NonEmptyBuckets.Peek()
 	if !exists {
-		return -1, data, errors.New("No non-empty buckets")
+		return -1, data, errors.New("No item in queue bucket")
 	}
 
 	pq, _ := g.Buckets.Get(priorityBucket)

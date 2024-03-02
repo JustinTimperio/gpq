@@ -83,8 +83,9 @@ func (rt RouteHandler) Dequeue(c echo.Context) error {
 
 	// Dequeue the Message
 	_, m, err := queue.DeQueue()
+
 	if err != nil {
-		return echo.NewHTTPError(400, "Failed to dequeue message")
+		return echo.NewHTTPError(400, err)
 	}
 
 	c.Response().Write(m)
