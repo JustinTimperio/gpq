@@ -21,12 +21,6 @@ func (rt RouteHandler) Enqueue(c echo.Context) error {
 		return echo.NewHTTPError(400, "Topic not found")
 	}
 
-	// Get the Message
-	message, err := io.ReadAll(c.Request().Body)
-	if err != nil {
-		return echo.NewHTTPError(400, "Failed to read message")
-	}
-
 	// Get the Message Properties
 	priority, err := strconv.Atoi(c.QueryParam("priority"))
 	if err != nil {
@@ -61,6 +55,12 @@ func (rt RouteHandler) Enqueue(c echo.Context) error {
 	}
 	if timeoutDuration < 0 {
 		return echo.NewHTTPError(400, "TimeoutDuration must be a positive duration")
+	}
+
+	// Get the Message
+	message, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return echo.NewHTTPError(400, "Failed to read message")
 	}
 
 	// Enqueue the Message

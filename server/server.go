@@ -20,6 +20,9 @@ import (
 )
 
 func main() {
+	// Gob Register
+	gob.Register(map[string]interface{}{})
+	gob.Register([]interface{}{})
 
 	// Create a Zap Logger
 	cfg := zap.NewProductionConfig()
@@ -113,6 +116,10 @@ func main() {
 	TopicRoutes.GET("/list", gpqs.ListTopics)
 	TopicRoutes.POST("/:name/enqueue", gpqs.Enqueue)
 	TopicRoutes.GET("/:name/dequeue", gpqs.Dequeue)
+	TopicRoutes.POST("/:name/arrow/enqueue", gpqs.ArrowReceive)
+	TopicRoutes.GET("/:name/arrow/dequeue", gpqs.ArrowServe)
+	TopicRoutes.POST("/:name/avro/enqueue", gpqs.AvroReceive)
+	TopicRoutes.GET("/:name/avro/dequeue", gpqs.AvroServe)
 
 	// Topic Management Routes
 	if settings.Settings.AuthManagement {

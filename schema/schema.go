@@ -71,3 +71,8 @@ type User struct {
 	IsAdmin       bool
 	AllowedTopics hashmap.Map[string, []byte]
 }
+
+type AvroDataEntry struct {
+	Schema string
+	Data   interface{}
+}
