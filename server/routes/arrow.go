@@ -3,11 +3,16 @@ package routes
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
+	"io"
 	"strconv"
 	"time"
 
-	"github.com/apache/arrow/go/arrow/array"
-	"github.com/apache/arrow/go/arrow/ipc"
+	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/server/ws"
+	"github.com/apache/arrow/go/v16/arrow"
+	"github.com/apache/arrow/go/v16/arrow/arrio"
+	"github.com/apache/arrow/go/v16/arrow/ipc"
 	"github.com/labstack/echo/v4"
 )
 
@@ -58,33 +63,59 @@ func (rt RouteHandler) ArrowReceive(c echo.Context) error {
 		return echo.NewHTTPError(400, "TimeoutDuration must be a positive duration")
 	}
 
-	// initialize the reader with the stream of data
-	rdr, err := ipc.NewReader(c.Request().Body)
+	b, err := io.ReadAll(c.Request().Body)
 	if err != nil {
-		rt.Logger.Errorw("Failed to create reader", "error", err)
+		return echo.NewHTTPError(400, "Failed to read body: "+err.Error())
 	}
-	defer rdr.Release()
+	rdr, err := ipc.NewFileReader(bytes.NewReader(b))
+	if err != nil {
+		return echo.NewHTTPError(400, "Failed to create reader: "+err.Error())
+	}
+	defer rdr.Close()
 
-	for rdr.Next() {
-		msg, err := rdr.Read()
+	for i := 0; i < rdr.NumRecords(); i++ {
+		msg, err := rdr.Record(i)
 		if err != nil {
-			rt.Logger.Errorw("Failed to read message", "error", err)
+			return echo.NewHTTPError(400, "Failed to read message"+err.Error())
+		}
+		defer msg.Release()
+
+		buff := bytes.NewBuffer(nil)
+		ww := ipc.NewWriter(buff, ipc.WithSchema(rdr.Schema()))
+		defer ww.Close()
+
+		err = ww.Write(msg)
+		if err != nil {
+			return echo.NewHTTPError(400, "Failed to write message"+err.Error())
 		}
 
-		// Encode the item
+		var fields []schema.ArrowSchema
+		for _, field := range rdr.Schema().Fields() {
+			fields = append(fields, schema.ArrowSchema{
+				Name: field.Name,
+				Type: field.Type,
+			})
+		}
+
+		entry := schema.ArrowDataEntry{
+			Meta:   rdr.Schema().Metadata().ToMap(),
+			Data:   buff.Bytes(),
+			Schema: fields,
+		}
+
+		// Read the message into a gob object
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
-		err = enc.Encode(msg)
+		err = enc.Encode(entry)
 		if err != nil {
-			return err
+			fmt.Println("Failed to encode message", err)
+			return echo.NewHTTPError(400, "Failed to encode message"+err.Error())
 		}
-		blob := buf.Bytes()
 
-		queue.EnQueue(blob, int64(priority), shouldEscalate, escalateEvery, canTimeout, timeoutDuration)
-		msg.Release()
+		queue.EnQueue(buf.Bytes(), int64(priority), shouldEscalate, escalateEvery, canTimeout, timeoutDuration)
 	}
 
-	return c.String(200, "Message batch enqueued")
+	return nil
 }
 
 func (rt RouteHandler) ArrowServe(c echo.Context) error {
@@ -103,45 +134,78 @@ func (rt RouteHandler) ArrowServe(c echo.Context) error {
 		return echo.NewHTTPError(400, "Topic not found")
 	}
 
-	var wr *ipc.Writer
-	for i := 0; i < recordCount; i++ {
+	var wr *ipc.FileWriter
+	var attempts int
+	var collected int
+	w := &ws.WriterSeeker{}
+
+	for collected < recordCount {
+
+		// Todo: Make not a magic number
+		if attempts > 10 {
+			if collected == 0 {
+				return echo.NewHTTPError(400, "Failed to collect any messages")
+			}
+
+			wr.Close()
+			c.Response().Write(w.Buf.Bytes())
+			return nil
+		}
+
 		// Dequeue the Message
 		_, msg, err := queue.DeQueue()
 		if err != nil {
-			return echo.NewHTTPError(400, "Failed to dequeue message")
+			attempts++
+			time.Sleep(10 * time.Millisecond)
+			continue
 		}
 
 		// Decode the message
-		var message []array.Record
+		entry := schema.ArrowDataEntry{}
 		var buf bytes.Buffer
 		buf.Write(msg)
-		err = gob.NewDecoder(&buf).Decode(&message)
+		err = gob.NewDecoder(&buf).Decode(&entry)
 		if err != nil {
-			return echo.NewHTTPError(400, "Failed to decode message")
+			fmt.Println("Failed to decode message", err)
+			return echo.NewHTTPError(400, "Failed to decode message"+err.Error())
+		}
+
+		// Set the schema on the first iteration
+		if collected == 0 {
+			meta := arrow.MetadataFrom(entry.Meta)
+			var fields []arrow.Field
+			for _, field := range entry.Schema {
+				data := arrow.Field{
+					Name: field.Name,
+					Type: field.Type,
+				}
+				fields = append(fields, data)
+			}
+
+			wr, err = ipc.NewFileWriter(w, ipc.WithSchema(arrow.NewSchema(fields, &meta)))
+			if err != nil {
+				return echo.NewHTTPError(400, "Failed to create writer")
+			}
+			defer wr.Close()
 		}
 
 		// Record Reader
-		rr, err := array.NewRecordReader(message[0].Schema(), message)
+		rr, err := ipc.NewReader(bytes.NewReader(entry.Data))
 		if err != nil {
 			return echo.NewHTTPError(400, "Failed to create record reader")
 		}
 		defer rr.Release()
 
-		// Set the schema on the first iteration
-		if i == 0 {
-			wr = ipc.NewWriter(c.Response(), ipc.WithSchema(rr.Schema()))
-			defer wr.Close()
-		}
-
-		// Write the record
-		err = wr.Write(rr.Record())
+		_, err = arrio.Copy(wr, rr)
 		if err != nil {
-			return echo.NewHTTPError(400, "Failed to write message")
+			return echo.NewHTTPError(400, "Failed to copy record reader to writer"+err.Error())
 		}
+		collected++
 	}
 
 	// Set the response
+	wr.Close()
 	c.Response().Header().Set(echo.HeaderContentType, "application/vnd.apache.arrow.stream")
-
+	c.Response().Write(w.Buf.Bytes())
 	return nil
 }

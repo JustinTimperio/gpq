@@ -10,6 +10,7 @@ import (
 	"github.com/JustinTimperio/gpq/schema"
 	"github.com/JustinTimperio/gpq/server/routes"
 	"github.com/JustinTimperio/gpq/server/settings"
+	"github.com/apache/arrow/go/v16/arrow"
 
 	"github.com/cornelk/hashmap"
 	"github.com/dgraph-io/badger/v4"
@@ -23,7 +24,25 @@ func main() {
 	// Gob Register
 	gob.Register(map[string]interface{}{})
 	gob.Register([]interface{}{})
+	// Register PrimitiveTypes for gob
+	PrimitiveTypes := []arrow.DataType{
+		arrow.PrimitiveTypes.Int8,
+		arrow.PrimitiveTypes.Int16,
+		arrow.PrimitiveTypes.Int32,
+		arrow.PrimitiveTypes.Int64,
+		arrow.PrimitiveTypes.Uint8,
+		arrow.PrimitiveTypes.Uint16,
+		arrow.PrimitiveTypes.Uint32,
+		arrow.PrimitiveTypes.Uint64,
+		arrow.PrimitiveTypes.Float32,
+		arrow.PrimitiveTypes.Float64,
+		arrow.PrimitiveTypes.Date32,
+		arrow.PrimitiveTypes.Date64,
+	}
 
+	for _, v := range PrimitiveTypes {
+		gob.Register(v)
+	}
 	// Create a Zap Logger
 	cfg := zap.NewProductionConfig()
 	cfg.OutputPaths = []string{"stdout", settings.Settings.LogPath}

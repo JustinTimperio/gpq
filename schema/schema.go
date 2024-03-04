@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"github.com/apache/arrow/go/v16/arrow"
 	"github.com/cornelk/hashmap"
 )
 
@@ -75,4 +76,15 @@ type User struct {
 type AvroDataEntry struct {
 	Schema string
 	Data   interface{}
+}
+
+type ArrowDataEntry struct {
+	Schema []ArrowSchema
+	Meta   map[string]string
+	Data   []byte
+}
+
+type ArrowSchema struct {
+	Type arrow.DataType
+	Name string
 }
