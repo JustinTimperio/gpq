@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq"
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/server/schema"
 
 	"github.com/cornelk/hashmap"
 	"github.com/dgraph-io/badger/v4"

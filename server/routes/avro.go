@@ -7,11 +7,28 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/server/schema"
 	"github.com/labstack/echo/v4"
 	"github.com/linkedin/goavro/v2"
 )
 
+// @Summary		Receive Avro Data
+// @Description	Receives Avro data and enqueues it into a topic
+// @Tags			Avro
+// @ID				avro-receive
+// @Accept			application/vnd.apache.avro
+// @Produce		json
+// @Param			name				path		string	true	"Topic Name"
+// @Param			priority			query		int		true	"Priority"
+// @Param			should_escalate		query		bool	true	"Should Escalate"
+// @Param			escalate_every		query		string	true	"Escalate Every"
+// @Param			can_timeout			query		bool	true	"Can Timeout"
+// @Param			timeout_duration	query		string	true	"Timeout Duration"
+// @Success		200					{string}	string	"OK"
+// @Failure		400					{string}	string	"Bad Request"
+// @Router			/avro/receive/{name} [post]
+// @Security		ApiKeyAuth
+// @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) AvroReceive(c echo.Context) error {
 	// Get the Queue
 	name := c.Param("name")
@@ -105,6 +122,22 @@ func (rt RouteHandler) AvroReceive(c echo.Context) error {
 // In the future this should have some mechanism to not drop messages during errors
 // This is a pretty hard problem to solve, but it should be solved for mission critical applications
 // Right now, if there is an error, the message is dropped during a batch process
+
+// @Summary		Serve Avro Data
+// @Description	Batches and serves Avro data from a topic
+// @Tags			Avro
+// @ID				avro-serve
+// @Accept			json
+// @Produce		application/vnd.apache.avro
+// @Param			name	path		string	true	"Topic Name"
+// @Param			records	query		int		true	"Record Count"
+// @Success		200		{string}	string	"OK"
+// @Failure		400		{string}	string	"Bad Request"
+// @Router			/avro/serve/{name} [get]
+// @Security		ApiKeyAuth
+// @Param			Authorization	header	string	true	"Bearer {token}"
+// @Param			records			query	int		true	"Number of records to collect"
+// @Param			name			path	string	true	"Topic Name"
 func (rt RouteHandler) AvroServe(c echo.Context) error {
 	// Get the Queue
 	name := c.Param("name")
@@ -127,6 +160,7 @@ func (rt RouteHandler) AvroServe(c echo.Context) error {
 	var lastSchema string
 	var fileBuf bytes.Buffer
 
+	c.Response().Header().Set(echo.HeaderContentType, "application/vnd.apache.avro")
 	for collected < recordCount {
 
 		// Todo: Make not a magic number

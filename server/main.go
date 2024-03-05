@@ -7,20 +7,30 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq"
-	"github.com/JustinTimperio/gpq/schema"
 	"github.com/JustinTimperio/gpq/server/routes"
+	"github.com/JustinTimperio/gpq/server/schema"
 	"github.com/JustinTimperio/gpq/server/settings"
-	"github.com/apache/arrow/go/v16/arrow"
 
+	"github.com/apache/arrow/go/v16/arrow"
 	"github.com/cornelk/hashmap"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
+
+	_ "github.com/JustinTimperio/gpq/server/docs"
+	echoSwagger "github.com/swaggo/echo-swagger"
 )
 
+// @title			Swagger GPQ API
+// @version		1.0
+// @description	This is the API for the GPQ (Go Priority Queue) server.
+// @license.name	MIT License
+// @host			localhost:4040
+// @BasePath		/v1
 func main() {
+
 	// Gob Register
 	gob.Register(map[string]interface{}{})
 	gob.Register([]interface{}{})
@@ -105,7 +115,7 @@ func main() {
 		LogStatus: true,
 		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
 
-			logger.Infow("request",
+			logger.Debugw("request",
 				"URI", v.URI,
 				"status", v.Status,
 				"latency", v.Latency,
@@ -122,6 +132,7 @@ func main() {
 
 	// Public Routes
 	e.POST("/auth", gpqs.Auth)
+	e.GET("/swagger/*", echoSwagger.WrapHandler)
 
 	// Define Route Groups
 	TopicRoutes := e.Group("/topic")
@@ -133,8 +144,8 @@ func main() {
 		TopicRoutes.Use(routes.GenerateAuthMiddleWare(gpqs))
 	}
 	TopicRoutes.GET("/list", gpqs.ListTopics)
-	TopicRoutes.POST("/:name/enqueue", gpqs.Enqueue)
-	TopicRoutes.GET("/:name/dequeue", gpqs.Dequeue)
+	TopicRoutes.POST("/:name/raw/enqueue", gpqs.RawReceive)
+	TopicRoutes.GET("/:name/raw/dequeue", gpqs.RawServe)
 	TopicRoutes.POST("/:name/arrow/enqueue", gpqs.ArrowReceive)
 	TopicRoutes.GET("/:name/arrow/dequeue", gpqs.ArrowServe)
 	TopicRoutes.POST("/:name/avro/enqueue", gpqs.AvroReceive)

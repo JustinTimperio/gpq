@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/server/schema"
 	"github.com/JustinTimperio/gpq/server/settings"
 
 	"github.com/dgraph-io/badger/v4"
@@ -17,7 +17,16 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Auth authenticates a user and returns a token
+//	@Summary		Authenticate
+//	@Description	Authenticates a user and returns a token
+//	@Tags			Auth
+//	@ID				auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			credentials	body		schema.Credentials	true	"Credentials"
+//	@Success		200			{object}	schema.Token		"OK"
+//	@Failure		400			{string}	string				"Bad Request"
+//	@Router			/auth [post]
 func (rt *RouteHandler) Auth(c echo.Context) error {
 	// Parse and decode the request body into a new `Credentials` instance
 	creds := &schema.Credentials{}

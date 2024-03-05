@@ -9,12 +9,28 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq"
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/server/schema"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/labstack/echo/v4"
 )
 
-// AddTopic adds a topic to the hashmap
+//	@Summary		Add Topic
+//	@Description	Adds a topic to the gpq server
+//	@Tags			Topics
+//	@ID				add-topic
+//	@Accept			json
+//	@Produce		json
+//	@Param			name				query		string	true	"Topic Name"
+//	@Param			disk_path			query		string	true	"Disk Path"
+//	@Param			buckets				query		int		true	"Buckets"
+//	@Param			sync_to_disk		query		bool	true	"Sync To Disk"
+//	@Param			reprioritize		query		bool	true	"Reprioritize"
+//	@Param			reprioritize_rate	query		string	true	"Reprioritize Rate"
+//	@Success		200					{string}	string	"OK"
+//	@Failure		400					{string}	string	"Bad Request"
+//	@Router			/topic/add [post]
+//	@Security		ApiKeyAuth
+//	@Param			Authorization	header	string	true	"Bearer {token}"
 func (rt *RouteHandler) AddTopic(c echo.Context) error {
 	var err error
 
@@ -92,7 +108,18 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 	return echo.NewHTTPError(200, "Topic added")
 }
 
-// RemoveTopic removes a topic from the hashmap
+//	@Summary		Remove Topic
+//	@Description	Removes a topic from the gpq server
+//	@Tags			Topics
+//	@ID				remove-topic
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	query		string	true	"Topic Name"
+//	@Success		200		{string}	string	"OK"
+//	@Failure		400		{string}	string	"Bad Request"
+//	@Router			/topic/remove [post]
+//	@Security		ApiKeyAuth
+//	@Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) RemoveTopic(c echo.Context) error {
 	name := c.QueryParam("name")
 	if name == "" {
@@ -115,7 +142,16 @@ func (rt RouteHandler) RemoveTopic(c echo.Context) error {
 	return echo.NewHTTPError(200, "Topic removed")
 }
 
-// ListTopics lists all topics in the hashmap
+//	@Summary		List Topics
+//	@Description	Lists all topics in the gpq server
+//	@Tags			Topics
+//	@ID				list-topics
+//	@Produce		json
+//	@Success		200	{string}	string	"OK"
+//	@Failure		400	{string}	string	"Bad Request"
+//	@Router			/topic/list [get]
+//	@Security		ApiKeyAuth
+//	@Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) ListTopics(c echo.Context) error {
 
 	topics := make(map[string]uint64)

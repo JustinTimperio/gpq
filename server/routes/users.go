@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/server/schema"
 	"github.com/JustinTimperio/gpq/server/settings"
 
 	"github.com/dgraph-io/badger/v4"

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/server/schema"
 	"github.com/JustinTimperio/gpq/server/ws"
 	"github.com/apache/arrow/go/v16/arrow"
 	"github.com/apache/arrow/go/v16/arrow/arrio"
@@ -16,6 +16,23 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// @Summary		Receive Arrow Data
+// @Description	Receives Arrow data and enqueues it into a topic
+// @Tags			Arrow
+// @ID				arrow-receive
+// @Accept			application/vnd.apache.arrow
+// @Produce		json
+// @Param			name				path		string	true	"Topic Name"
+// @Param			priority			query		int		true	"Priority"
+// @Param			should_escalate		query		bool	true	"Should Escalate"
+// @Param			escalate_every		query		string	true	"Escalate Every"
+// @Param			can_timeout			query		bool	true	"Can Timeout"
+// @Param			timeout_duration	query		string	true	"Timeout Duration"
+// @Success		200					{string}	string	"OK"
+// @Failure		400					{string}	string	"Bad Request"
+// @Router			/arrow/receive/{name} [post]
+// @Security		ApiKeyAuth
+// @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) ArrowReceive(c echo.Context) error {
 	// Get the Queue
 	name := c.Param("name")
@@ -118,6 +135,18 @@ func (rt RouteHandler) ArrowReceive(c echo.Context) error {
 	return nil
 }
 
+// @Summary		Serve Arrow Data
+// @Description	Batches and serves Arrow data from a topic
+// @Tags			Arrow
+// @ID				arrow-serve
+// @Produce		application/vnd.apache.arrow.stream
+// @Param			name	path		string	true	"Topic Name"
+// @Param			records	query		int		false	"Number of records to collect"
+// @Success		200		{array}		byte	"Arrow Data"
+// @Failure		400		{string}	string	"Bad Request"
+// @Router			/arrow/serve/{name} [get]
+// @Security		ApiKeyAuth
+// @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) ArrowServe(c echo.Context) error {
 	// Get the Queue
 	name := c.Param("name")
@@ -138,6 +167,7 @@ func (rt RouteHandler) ArrowServe(c echo.Context) error {
 	var attempts int
 	var collected int
 	w := &ws.WriterSeeker{}
+	c.Response().Header().Set(echo.HeaderContentType, "application/vnd.apache.arrow.stream")
 
 	for collected < recordCount {
 
@@ -205,7 +235,6 @@ func (rt RouteHandler) ArrowServe(c echo.Context) error {
 
 	// Set the response
 	wr.Close()
-	c.Response().Header().Set(echo.HeaderContentType, "application/vnd.apache.arrow.stream")
 	c.Response().Write(w.Buf.Bytes())
 	return nil
 }

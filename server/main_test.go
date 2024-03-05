@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/server/schema"
 	"github.com/JustinTimperio/gpq/server/ws"
 	"github.com/apache/arrow/go/v16/arrow"
 	"github.com/apache/arrow/go/v16/arrow/array"
@@ -25,11 +25,47 @@ import (
 const (
 	URL          = "http://localhost:4040"
 	Total        = 100000
-	Files        = 100
-	BatchTotal   = 100000
+	Files        = 1000
+	BatchTotal   = 1000000
 	ItemsPerFile = 1000
 	Queue        = "test"
+	SyncToDisk   = "false"
 )
+
+func TestTopicCreation(t *testing.T) {
+	// Login and get a token
+	login, err := http.Post(
+		URL+"/auth",
+		"application/json",
+		bytes.NewBuffer([]byte(`{"username":"admin","password":"admin"}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if login.StatusCode != http.StatusOK {
+		t.Fatalf("Logic expected status OK, got %v", login.StatusCode)
+	}
+
+	// Decode the token and read the key
+	token := schema.Token{}
+	err = json.NewDecoder(login.Body).Decode(&token)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a new topic
+	req, err := http.NewRequest("POST", URL+"/management/add_topic?name="+Queue+"&disk_path=/opt/gpq/topic/"+Queue+"&buckets=10&sync_to_disk="+SyncToDisk+"&reprioritize=true&reprioritize_rate=1m", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+
+	client := &http.Client{}
+	_, err = client.Do(req)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+}
 
 func TestTransactionSpeedSingle(t *testing.T) {
 
@@ -58,6 +94,14 @@ func TestTransactionSpeedSingle(t *testing.T) {
 	var recived int64
 	var sent int64
 
+	go func() {
+		for Total > int(atomic.LoadInt64(&recived)) {
+			fmt.Println("Total time", time.Since(timer), "Sent", atomic.LoadInt64(&sent), "Recived", atomic.LoadInt64(&recived))
+			time.Sleep(1 * time.Second)
+
+		}
+	}()
+
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func() {
@@ -69,7 +113,7 @@ func TestTransactionSpeedSingle(t *testing.T) {
 				priority := fmt.Sprintf("%d", rand.Intn(10))
 
 				msg := fmt.Sprintf(`{"message":"This is message number %d"}`, i)
-				req, err := http.NewRequest("POST", URL+"/topic/"+Queue+"/enqueue?priority="+priority+"&should_escalate=true&escalate_every=1m&can_timeout=true&timeout_duration=30m", bytes.NewBuffer([]byte(msg)))
+				req, err := http.NewRequest("POST", URL+"/topic/"+Queue+"/raw/enqueue?priority="+priority+"&should_escalate=true&escalate_every=1m&can_timeout=true&timeout_duration=30m", bytes.NewBuffer([]byte(msg)))
 				if err != nil {
 					log.Fatalln(err)
 				}
@@ -98,7 +142,7 @@ func TestTransactionSpeedSingle(t *testing.T) {
 			defer wg.Done()
 
 			for i := 0; i < Total/100; i++ {
-				req, err := http.NewRequest("GET", URL+"/topic/"+Queue+"/dequeue", nil)
+				req, err := http.NewRequest("GET", URL+"/topic/"+Queue+"/raw/dequeue", nil)
 				if err != nil {
 					log.Fatalln(err)
 				}
@@ -194,7 +238,7 @@ func TestTransactionSpeedAvro(t *testing.T) {
 				defer wg.Done()
 
 				for BatchTotal > int(atomic.LoadInt64(&recived)) {
-					req, err := http.NewRequest("GET", URL+"/topic/"+Queue+"/avro/dequeue?records=500", nil)
+					req, err := http.NewRequest("GET", URL+"/topic/"+Queue+"/avro/dequeue?records=1000", nil)
 					if err != nil {
 						log.Fatalln(err)
 					}
@@ -354,7 +398,7 @@ func TestTransactionSpeedArrow(t *testing.T) {
 			defer wg.Done()
 
 			for BatchTotal > int(atomic.LoadInt64(&recived)) {
-				req, err := http.NewRequest("GET", URL+"/topic/"+Queue+"/arrow/dequeue?records=500", nil)
+				req, err := http.NewRequest("GET", URL+"/topic/"+Queue+"/arrow/dequeue?records=1000", nil)
 				if err != nil {
 					log.Fatalln(err)
 				}
@@ -439,3 +483,136 @@ func RandomArrowFile() (sent int, b []byte) {
 	ws.Close()
 	return sent, ws.Buf.Bytes()
 }
+
+/*
+func TestTransactionSpeedParquet(t *testing.T) {
+	// Login and get a token
+	login, err := http.Post(
+		URL+"/auth",
+		"application/json",
+		bytes.NewBuffer([]byte(`{"username":"admin","password":"admin"}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if login.StatusCode != http.StatusOK {
+		t.Fatalf("Logic expected status OK, got %v", login.StatusCode)
+	}
+
+	// Decode the token and read the key
+	token := schema.Token{}
+	err = json.NewDecoder(login.Body).Decode(&token)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wg := sync.WaitGroup{}
+	timer := time.Now()
+	var sent int64
+	var recived int64
+	go func() {
+		for BatchTotal > int(atomic.LoadInt64(&recived)) {
+			fmt.Println("Total time", time.Since(timer), "Sent", atomic.LoadInt64(&sent), "Recived", atomic.LoadInt64(&recived))
+			time.Sleep(1 * time.Second)
+
+		}
+	}()
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < Files/10; i++ {
+				priority := fmt.Sprintf("%d", rand.Intn(10))
+				s, body := RandomParquetFile()
+
+				req, err := http.NewRequest("POST", URL+"/topic/"+Queue+"/parquet/enqueue?priority="+priority+"&should_escalate=true&escalate_every=1m&can_timeout=true&timeout_duration=30m", bytes.NewBuffer(body))
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				req.Header.Set("Authorization", "Bearer "+token.Token)
+
+				client := &http.Client{}
+				resp, err := client.Do(req)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				if resp.StatusCode != http.StatusOK {
+					body, _ := io.ReadAll(resp.Body)
+					log.Fatalf("Expected status OK, got %v Body: %v", resp.StatusCode, string(body))
+				}
+				atomic.AddInt64(&sent, int64(s))
+			}
+		}()
+	}
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for BatchTotal > int(atomic.LoadInt64(&recived)) {
+				req, err := http.NewRequest("GET", URL+"/topic/"+Queue+"/parquet/dequeue?records=1000", nil)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				req.Header.Set("Authorization", "Bearer "+token.Token)
+
+				client := &http.Client{}
+				resp, err := client.Do(req)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				if resp.StatusCode != http.StatusOK {
+					// b, _ := io.ReadAll(resp.Body)
+					// fmt.Printf("Expected status OK, got %v Response: %v", resp.StatusCode, string(b))
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				// Read the Parquet file
+				b, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatal(err)
+				}
+				file, err := parquet.OpenFile(bytes.NewReader(b), int64(len(b)))
+				if err != nil {
+					log.Fatal(err)
+				}
+				for row := range file.RowGroups() {
+					atomic.AddInt64(&recived, int64(row))
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	fmt.Println("Total time", time.Since(timer), "Sent", atomic.LoadInt64(&sent), "Recived", atomic.LoadInt64(&recived))
+
+}
+
+type pschema struct {
+	ID int64 `parquet:"ID"`
+}
+
+func RandomParquetFile() (int64, []byte) {
+	// Create a new Parquet file
+	buf := new(bytes.Buffer)
+	w := parquet.NewWriter(buf, parquet.SchemaOf(pschema{}))
+
+	for i := 0; i < ItemsPerFile; i++ {
+		entry := pschema{
+			ID: rand.Int63(),
+		}
+		w.Write(entry)
+	}
+
+	// Close the Parquet file
+	if err := w.Close(); err != nil {
+		log.Fatal(err)
+	}
+
+	// Return the bytes of the Parquet file
+	return ItemsPerFile, buf.Bytes()
+}
+*/

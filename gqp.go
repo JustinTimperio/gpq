@@ -357,3 +357,33 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 
 	return timedOutItems, escalatedItems, errs
 }
+
+// Peek returns the item with the highest priority from the GPQ.
+// It returns the priority of the item, the data associated with it,
+// and an error if the queue is empty or if any internal data structures are missing.
+func (g *GPQ[d]) Peek() (data d, err error) {
+
+	// Return an error if there are no items in the queue
+	if atomic.LoadUint64(&g.NonEmptyBuckets.ObjectsInQueue) == 0 && atomic.LoadInt64(&g.NonEmptyBuckets.ActiveBuckets) == 0 {
+		return data, errors.New("No items in any queue")
+	}
+
+	// Get the first item from the highest priority bucket
+	// If the bucket is empty, remove it from the non-empty buckets
+	// This structure allows for O(1) access to the highest priority item
+	priorityBucket, exists := g.NonEmptyBuckets.Peek()
+	if !exists {
+		return data, errors.New("No item in queue bucket")
+	}
+
+	pq, _ := g.Buckets.Get(priorityBucket)
+
+	// Dequeue the item
+	item, err := pq.Peek()
+	if err != nil {
+		return item, err
+	}
+
+	return item, nil
+
+}

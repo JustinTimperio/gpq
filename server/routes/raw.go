@@ -8,9 +8,24 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// Enqueue a message to the topic with the given name and settings
-func (rt RouteHandler) Enqueue(c echo.Context) error {
-
+//	@Summary		Receive Raw Data
+//	@Description	Receives Raw data and enqueues it into a topic
+//	@Tags			Raw
+//	@ID				raw-receive
+//	@Accept			application/octet-stream
+//	@Produce		json
+//	@Param			name				path		string	true	"Topic Name"
+//	@Param			priority			query		int		true	"Priority"
+//	@Param			should_escalate		query		bool	true	"Should Escalate"
+//	@Param			escalate_every		query		string	true	"Escalate Every"
+//	@Param			can_timeout			query		bool	true	"Can Timeout"
+//	@Param			timeout_duration	query		string	true	"Timeout Duration"
+//	@Success		200					{string}	string	"OK"
+//	@Failure		400					{string}	string	"Bad Request"
+//	@Router			/raw/receive/{name} [post]
+//	@Security		ApiKeyAuth
+//	@Param			Authorization	header	string	true	"Bearer {token}"
+func (rt RouteHandler) RawReceive(c echo.Context) error {
 	// Get the Queue
 	name := c.Param("name")
 	if name == "" {
@@ -69,8 +84,19 @@ func (rt RouteHandler) Enqueue(c echo.Context) error {
 	return echo.NewHTTPError(200, "Message enqueued")
 }
 
-// Dequeue a message from the topic with highest priority
-func (rt RouteHandler) Dequeue(c echo.Context) error {
+//	@Summary		Serve Raw Data
+//	@Description	Dequeues a message from the topic with highest priority
+//	@Tags			Raw
+//	@ID				raw-serve
+//	@Accept			application/octet-stream
+//	@Produce		application/octet-stream
+//	@Param			name	path		string	true	"Topic Name"
+//	@Success		200		{string}	string	"OK"
+//	@Failure		400		{string}	string	"Bad Request"
+//	@Router			/raw/serve/{name} [get]
+//	@Security		ApiKeyAuth
+//	@Param			Authorization	header	string	true	"Bearer {token}"
+func (rt RouteHandler) RawServe(c echo.Context) error {
 	// Get the Queue
 	name := c.Param("name")
 	if name == "" {
