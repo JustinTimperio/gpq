@@ -16,9 +16,10 @@ import (
 func TestGPQ(t *testing.T) {
 
 	var (
-		total      int  = 1000
-		print      bool = true
+		total      int  = 100000
+		print      bool = false
 		syncToDisk bool = true
+		lazy       bool = true
 		retries    int  = 10
 		sent       uint64
 		received   uint64
@@ -63,7 +64,7 @@ func TestGPQ(t *testing.T) {
 		}
 	}()
 
-	queue, err := gpq.NewGPQ[int](10, syncToDisk, "/tmp/gpq/")
+	queue, err := gpq.NewGPQ[int](10, syncToDisk, "/tmp/gpq/test", lazy)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -137,7 +138,7 @@ func TestGPQ(t *testing.T) {
 	}
 
 	wg.Wait()
-	log.Println("Sent", sent, "Received", received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
+	log.Println("Sent", atomic.LoadUint64(&sent), "Received", atomic.LoadUint64(&received), "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
 
 	// Wait for all db sessions to sync to disk
 	queue.ActiveDBSessions.Wait()

@@ -30,6 +30,7 @@ const (
 	ItemsPerFile = 1000
 	Queue        = "test"
 	SyncToDisk   = "false"
+	LazyDiskSync = "true"
 )
 
 func TestTopicCreation(t *testing.T) {
@@ -53,7 +54,7 @@ func TestTopicCreation(t *testing.T) {
 	}
 
 	// Create a new topic
-	req, err := http.NewRequest("POST", URL+"/management/add_topic?name="+Queue+"&disk_path=/opt/gpq/topic/"+Queue+"&buckets=10&sync_to_disk="+SyncToDisk+"&reprioritize=true&reprioritize_rate=1m", nil)
+	req, err := http.NewRequest("POST", URL+"/management/add_topic?name="+Queue+"&disk_path=/opt/gpq/topic/"+Queue+"&buckets=10&sync_to_disk="+SyncToDisk+"&reprioritize=true&reprioritize_rate=1m&lazy_disk_sync="+LazyDiskSync, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

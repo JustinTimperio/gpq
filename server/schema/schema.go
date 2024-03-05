@@ -45,6 +45,7 @@ type Topic struct {
 	Buckets          int
 	SyncToDisk       bool
 	DiskPath         string
+	LazyDiskSync     bool
 	RePrioritize     bool
 	RePrioritizeRate time.Duration
 }

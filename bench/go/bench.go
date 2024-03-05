@@ -12,6 +12,7 @@ import (
 var (
 	total      int  = 10000000
 	syncToDisk bool = false
+	lazySync   bool = false
 	print      bool = false
 	maxBuckets int  = 10
 
@@ -24,7 +25,7 @@ var (
 
 func main() {
 
-	queue, err := gpq.NewGPQ[int](maxBuckets, syncToDisk, "/tmp/gpq/")
+	queue, err := gpq.NewGPQ[int](maxBuckets, syncToDisk, "/tmp/gpq/", lazySync)
 	if err != nil {
 		log.Fatalln(err)
 	}

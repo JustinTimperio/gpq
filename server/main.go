@@ -243,7 +243,7 @@ func rebuildFromDB(gpqs *routes.RouteHandler) {
 				}
 
 				// Create a new GPQ
-				queue, err := gpq.NewGPQ[[]byte](topic.Buckets, topic.SyncToDisk, topic.DiskPath)
+				queue, err := gpq.NewGPQ[[]byte](topic.Buckets, topic.SyncToDisk, topic.DiskPath, topic.LazyDiskSync)
 				if err != nil {
 					return err
 				}

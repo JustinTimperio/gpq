@@ -19,3 +19,8 @@ type Item[d any] struct {
 	LastEscalated time.Time
 	Index         int
 }
+
+type LazyMessageQueueItem struct {
+	ID   []byte
+	Data []byte
+}
