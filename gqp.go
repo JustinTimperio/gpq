@@ -17,7 +17,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// GPQ is a priority queue that supports priority escalation
+// GPQ is a generic priority queue that supports priority levels and timeouts
+// It is implemented using a heap for each priority level and a priority queue of non-empty buckets
+// It also supports disk caching using badgerDB with the option to lazily disk writes and deletes
+// The GPQ is thread-safe and supports concurrent access
 type GPQ[d any] struct {
 	BucketCount int64
 	// Buckets is a map of priority buckets
@@ -49,13 +52,15 @@ type GPQ[d any] struct {
 	BatchCounter uint64
 	// BatchMutex is a mutex used to lock the batch number
 	BatchMutex *sync.Mutex
+	// BatchSize is the size of each batch that is sent to the disk cache or deleted
+	BatchSize int64
 }
 
 // NewGPQ creates a new GPQ with the given number of buckets
 // The number of buckets is the number of priority levels you want to support
 // You must provide the number of buckets ahead of time and all priorities you submit
 // must be within the range of 0 to NumOfBuckets
-func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string, lazyDiskCache bool) (*GPQ[d], error) {
+func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string, lazyDiskCache bool, batchSize int64) (*GPQ[d], error) {
 	bp := NewBucketPriorityQueue()
 
 	gpq := &GPQ[d]{
@@ -72,6 +77,7 @@ func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string, lazyD
 		SyncedBatches:           &sync.Map{},
 		BatchNumber:             1,
 		BatchMutex:              &sync.Mutex{},
+		BatchSize:               batchSize,
 	}
 
 	for i := 0; i < NumOfBuckets; i++ {
@@ -148,7 +154,6 @@ func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string, lazyD
 		if err != nil {
 			return nil, errors.New("Error reading from disk cache: " + err.Error())
 		}
-		fmt.Println("Re-enqueued", reEnqueued, "items from disk cache")
 
 	} else {
 		gpq.DiskCache = nil
@@ -201,7 +206,7 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalation
 		value := buf.Bytes()
 
 		g.BatchMutex.Lock()
-		if g.BatchCounter == 1000 {
+		if g.BatchCounter == uint64(g.BatchSize) {
 			g.BatchCounter = 0
 			g.BatchNumber++
 		}
@@ -462,15 +467,17 @@ func (g *GPQ[d]) LazyDiskLoader() {
 		case item, ok := <-g.LazyDiskSendChan:
 			if !ok {
 				// Channel is closed, process remaining batch and return
-				for _, v := range batch {
+				for k, v := range batch {
 					g.processBatch(v)
+					batch[k] = batch[k][:0]
+					g.SyncedBatches.Store(k, true)
 				}
 				return
 			}
 
 			batch[item.TransactionBatch] = append(batch[item.TransactionBatch], item)
 
-			if len(batch[item.TransactionBatch]) >= 1000 {
+			if len(batch[item.TransactionBatch]) >= int(g.BatchSize) {
 				synced, ok := g.SyncedBatches.Load(item.TransactionBatch)
 				if ok && synced.(bool) == true {
 					g.processBatch(batch[item.TransactionBatch])
@@ -481,7 +488,7 @@ func (g *GPQ[d]) LazyDiskLoader() {
 
 		case <-ticker.C:
 			for k, v := range batch {
-				if len(v) >= 1000 {
+				if len(v) >= int(g.BatchSize) {
 					g.processBatch(v)
 					batch[k] = batch[k][:0]
 					g.SyncedBatches.Store(k, true)
@@ -505,13 +512,16 @@ func (g *GPQ[d]) LazyDiskDeleter() {
 				// Channel is closed, process remaining batch and return
 				for _, v := range batch {
 					g.deleteBatch(v)
+					batch[item.TransactionBatch] = batch[item.TransactionBatch][:0]
+					g.SyncedBatches.Delete(item.TransactionBatch)
 				}
 				return
 			}
 			// Add the item to the batch
 			batch[item.TransactionBatch] = append(batch[item.TransactionBatch], item)
 
-			if len(batch[item.TransactionBatch]) >= 1000 {
+			// If the batch is full, process it and delete the items from the disk cache
+			if len(batch[item.TransactionBatch]) >= int(g.BatchSize) {
 				synced, ok := g.SyncedBatches.Load(item.TransactionBatch)
 				if ok && synced.(bool) == true {
 					g.deleteBatch(batch[item.TransactionBatch])
@@ -525,6 +535,7 @@ func (g *GPQ[d]) LazyDiskDeleter() {
 
 func (g *GPQ[d]) processBatch(batch []schema.LazyMessageQueueItem) error {
 	txn := g.DiskCache.NewTransaction(true) // Read-write transaction
+	defer txn.Discard()
 
 	for i := 0; i < len(batch); i++ {
 		entry := batch[i]
@@ -550,6 +561,7 @@ func (g *GPQ[d]) processBatch(batch []schema.LazyMessageQueueItem) error {
 
 func (g *GPQ[d]) deleteBatch(batch []schema.LazyMessageQueueItem) error {
 	txn := g.DiskCache.NewTransaction(true) // Read-write transaction
+	defer txn.Discard()
 
 	for i := 0; i < len(batch); i++ {
 		entry := batch[i]
@@ -571,4 +583,18 @@ func (g *GPQ[d]) deleteBatch(batch []schema.LazyMessageQueueItem) error {
 		return err
 	}
 	return nil
+}
+
+func (g *GPQ[d]) Close() {
+	close(g.LazyDiskSendChan)
+	close(g.LazyDiskDeleteChan)
+
+	// Wait for all db sessions to sync to disk
+	g.ActiveDBSessions.Wait()
+
+	// Sync the disk cache
+	if g.DiskCacheEnabled {
+		g.DiskCache.Sync()
+		g.DiskCache.Close()
+	}
 }

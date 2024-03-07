@@ -89,7 +89,7 @@ func iter(prioritize bool) {
 func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, received *uint64, reprioritized *uint64, lazy bool) string {
 
 	// Create a new GPQ with a h-heap width of 100 using the TestStruct as the data type
-	queue, err := gpq.NewGPQ[int](nBuckets, false, "/tmp/gpq/", lazy)
+	queue, err := gpq.NewGPQ[int](nBuckets, false, "/tmp/gpq/", lazy, 1000)
 	if err != nil {
 		log.Fatalln(err)
 	}

@@ -560,6 +560,13 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "type": "integer",
+                        "description": "Batch Size",
+                        "name": "batch_size",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
                         "type": "string",
                         "description": "Bearer {token}",
                         "name": "Authorization",

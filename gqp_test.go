@@ -21,6 +21,7 @@ func TestGPQ(t *testing.T) {
 		print      bool = false
 		syncToDisk bool = true
 		lazy       bool = true
+		batchSize  int  = 1000
 		retries    int  = 20
 		sent       uint64
 		received   uint64
@@ -65,7 +66,7 @@ func TestGPQ(t *testing.T) {
 		}
 	}()
 
-	queue, err := gpq.NewGPQ[int](10, syncToDisk, "/tmp/gpq/test", lazy)
+	queue, err := gpq.NewGPQ[int](10, syncToDisk, "/tmp/gpq/test", lazy, int64(batchSize))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -101,8 +102,8 @@ func TestGPQ(t *testing.T) {
 	var missed int64
 	var hits int64
 
-	wg.Add(1)
-	for i := 0; i < 1; i++ {
+	wg.Add(2)
+	for i := 0; i < 2; i++ {
 		go func() {
 			defer wg.Done()
 
@@ -142,11 +143,7 @@ func TestGPQ(t *testing.T) {
 	log.Println("Sent", atomic.LoadUint64(&sent), "Received", atomic.LoadUint64(&received), "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
 
 	// Wait for all db sessions to sync to disk
-	close(queue.LazyDiskSendChan)
-	close(queue.LazyDiskDeleteChan)
-	queue.ActiveDBSessions.Wait()
-	queue.DiskCache.Sync()
-	queue.DiskCache.Close()
+	queue.Close()
 
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/JustinTimperio/gpq/server/schema"
 	"github.com/JustinTimperio/gpq/server/ws"
+
 	"github.com/apache/arrow/go/v16/arrow"
 	"github.com/apache/arrow/go/v16/arrow/arrio"
 	"github.com/apache/arrow/go/v16/arrow/ipc"

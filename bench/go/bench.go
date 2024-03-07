@@ -25,7 +25,7 @@ var (
 
 func main() {
 
-	queue, err := gpq.NewGPQ[int](maxBuckets, syncToDisk, "/tmp/gpq/", lazySync)
+	queue, err := gpq.NewGPQ[int](maxBuckets, syncToDisk, "/tmp/gpq/", lazySync, 1000)
 	if err != nil {
 		log.Fatalln(err)
 	}

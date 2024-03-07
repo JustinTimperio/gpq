@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/JustinTimperio/gpq"
@@ -31,6 +34,10 @@ import (
 // @BasePath		/v1
 func main() {
 
+	// Capture SIGINT and SIGTERM
+	interupt := make(chan os.Signal, 1)
+	signal.Notify(interupt, syscall.SIGINT, syscall.SIGTERM)
+
 	// Gob Register
 	gob.Register(map[string]interface{}{})
 	gob.Register([]interface{}{})
@@ -55,7 +62,12 @@ func main() {
 	}
 	// Create a Zap Logger
 	cfg := zap.NewProductionConfig()
-	cfg.OutputPaths = []string{"stdout", settings.Settings.LogPath}
+
+	if settings.Settings.STDOut {
+		cfg.OutputPaths = []string{"stdout", settings.Settings.LogPath}
+	} else {
+		cfg.OutputPaths = []string{settings.Settings.LogPath}
+	}
 
 	logger := zap.Must(cfg.Build()).Sugar()
 	defer logger.Sync()
@@ -86,6 +98,25 @@ func main() {
 
 	// Rebuild the GPQs and ValidTokens from the SettingsDB
 	rebuildFromDB(&gpqs)
+
+	// Launch a cleanup routine to in the case that the server is restarted
+	// TODO: In the future this should stop the server before draining and syncing to disk
+	go func() {
+		<-interupt
+
+		gpqs.Logger.Infow("Server shutting down topics and syncing disk...")
+
+		gpqs.Topics.Range(func(key string, gpq *gpq.GPQ[[]byte]) bool {
+			gpq.Close()
+			return true
+		})
+
+		gpqs.SettingsDB.Sync()
+		gpqs.SettingsDB.Close()
+
+		os.Exit(0)
+
+	}()
 
 	// Add the admin user to the settings DB
 	// This is done every boot to ensure the password from the config is always used
@@ -243,7 +274,7 @@ func rebuildFromDB(gpqs *routes.RouteHandler) {
 				}
 
 				// Create a new GPQ
-				queue, err := gpq.NewGPQ[[]byte](topic.Buckets, topic.SyncToDisk, topic.DiskPath, topic.LazyDiskSync)
+				queue, err := gpq.NewGPQ[[]byte](topic.Buckets, topic.SyncToDisk, topic.DiskPath, topic.LazyDiskSync, topic.BatchSize)
 				if err != nil {
 					return err
 				}

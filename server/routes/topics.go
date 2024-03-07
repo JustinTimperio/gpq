@@ -26,6 +26,7 @@ import (
 // @Param			sync_to_disk		query		bool	true	"Sync To Disk"
 // @Param			reprioritize		query		bool	true	"Reprioritize"
 // @Param			reprioritize_rate	query		string	true	"Reprioritize Rate"
+// @Param			batch_size			query		int64	true	"Batch Size"
 // @Success		200					{string}	string	"OK"
 // @Failure		400					{string}	string	"Bad Request"
 // @Router			/topic/add [post]
@@ -40,12 +41,10 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 	if topic.Name == "" {
 		return echo.NewHTTPError(400, "No topic name provided")
 	}
-
 	topic.DiskPath = c.QueryParam("disk_path")
 	if topic.DiskPath == "" {
 		return echo.NewHTTPError(400, "No disk path provided")
 	}
-
 	topic.Buckets, err = strconv.Atoi(c.QueryParam("buckets"))
 	if err != nil {
 		return echo.NewHTTPError(400, "Failed to parse buckets")
@@ -66,6 +65,10 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(400, "Failed to parse reprioritize_rate")
 	}
+	topic.BatchSize, err = strconv.ParseInt(c.QueryParam("batch_size"), 10, 64)
+	if err != nil {
+		return echo.NewHTTPError(400, "Failed to parse batch_size")
+	}
 
 	_, exists := rt.Topics.Get(topic.Name)
 	if exists {
@@ -80,7 +83,7 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 	}
 
 	// Create a new GPQ
-	queue, err := gpq.NewGPQ[[]byte](topic.Buckets, topic.SyncToDisk, topic.DiskPath, topic.LazyDiskSync)
+	queue, err := gpq.NewGPQ[[]byte](topic.Buckets, topic.SyncToDisk, topic.DiskPath, topic.LazyDiskSync, topic.BatchSize)
 	if err != nil {
 		return echo.NewHTTPError(500, "Failed to create queue")
 	}

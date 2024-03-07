@@ -29,6 +29,7 @@ type Settings struct {
 	SettingsDBPath string `koanf:"settings_db_path"`
 	ConfigPath     string `koanf:"config_path"`
 	LogPath        string `koanf:"log_path"`
+	STDOut         bool   `koanf:"stdout"`
 
 	// Auth
 	AuthTopics     bool `koanf:"auth_topics"`
@@ -48,6 +49,7 @@ type Topic struct {
 	LazyDiskSync     bool
 	RePrioritize     bool
 	RePrioritizeRate time.Duration
+	BatchSize        int64
 }
 
 type User struct {
