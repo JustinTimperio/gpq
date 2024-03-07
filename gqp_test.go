@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq"
+	"github.com/dgraph-io/badger/v4"
 )
 
 func TestGPQ(t *testing.T) {
@@ -20,7 +21,7 @@ func TestGPQ(t *testing.T) {
 		print      bool = false
 		syncToDisk bool = true
 		lazy       bool = true
-		retries    int  = 10
+		retries    int  = 20
 		sent       uint64
 		received   uint64
 	)
@@ -131,7 +132,7 @@ func TestGPQ(t *testing.T) {
 					}
 					lastPriority = priority
 				}
-				time.Sleep(10 * time.Millisecond)
+				time.Sleep(20 * time.Millisecond)
 				log.Println("Retrying", i)
 			}
 		}()
@@ -141,6 +142,36 @@ func TestGPQ(t *testing.T) {
 	log.Println("Sent", atomic.LoadUint64(&sent), "Received", atomic.LoadUint64(&received), "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
 
 	// Wait for all db sessions to sync to disk
+	close(queue.LazyDiskSendChan)
+	close(queue.LazyDiskDeleteChan)
 	queue.ActiveDBSessions.Wait()
+	queue.DiskCache.Sync()
+	queue.DiskCache.Close()
 
+}
+
+func TestNumberOfItems(t *testing.T) {
+	var total int
+	opts := badger.DefaultOptions("/tmp/gpq/test")
+	opts.Logger = nil
+	db, err := badger.Open(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchSize = 10
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		for it.Rewind(); it.Valid(); it.Next() {
+			total++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("Total items in badgerDB", total)
+	return
 }

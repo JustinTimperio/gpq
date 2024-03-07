@@ -61,12 +61,12 @@ func (pq *CorePriorityQueue[T]) EnQueue(data schema.Item[T]) {
 }
 
 // DeQueue removes the first item from the heap
-func (pq *CorePriorityQueue[T]) DeQueue() (diskUUID []byte, priority int64, data T, err error) {
+func (pq *CorePriorityQueue[T]) DeQueue() (batchNumber uint64, diskUUID []byte, priority int64, data T, err error) {
 	pq.mutex.Lock()
 	defer pq.mutex.Unlock()
 
 	if len(pq.items) == 0 {
-		return nil, -1, data, errors.New("Core Priority Queue Error: No items found in the queue")
+		return 0, nil, -1, data, errors.New("Core Priority Queue Error: No items found in the queue")
 	}
 
 	old := pq.items
@@ -82,7 +82,7 @@ func (pq *CorePriorityQueue[T]) DeQueue() (diskUUID []byte, priority int64, data
 	}
 
 	atomic.AddUint64(&pq.bpq.ObjectsInQueue, ^uint64(0))
-	return item.DiskUUID, item.Priority, item.Data, nil
+	return item.BatchNumber, item.DiskUUID, item.Priority, item.Data, nil
 }
 
 func (pq CorePriorityQueue[T]) Peek() (data T, err error) {
