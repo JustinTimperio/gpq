@@ -17,12 +17,13 @@ import (
 func TestGPQ(t *testing.T) {
 
 	var (
-		total      int  = 10000000
+		total      int  = 1000000
 		print      bool = false
 		syncToDisk bool = true
 		lazy       bool = true
 		batchSize  int  = 1000
 		sent       uint64
+		timedOut   uint64
 		received   uint64
 		missed     int64
 		hits       int64
@@ -73,6 +74,18 @@ func TestGPQ(t *testing.T) {
 	}
 	wg := &sync.WaitGroup{}
 
+	go func() {
+		for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received) < uint64(total) {
+			time.Sleep(500 * time.Millisecond)
+			to, es, err := queue.Prioritize()
+			if err != nil {
+			}
+			atomic.AddUint64(&timedOut, to)
+			log.Println("Prioritize Timed Out:", to, "Escalated:", es)
+		}
+
+	}()
+
 	timer := time.Now()
 	wg.Add(10)
 	for i := 0; i < 10; i++ {
@@ -107,7 +120,7 @@ func TestGPQ(t *testing.T) {
 
 			var lastPriority int64
 
-			for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received) < uint64(total) {
+			for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
 				timer := time.Now()
 				priority, item, err := queue.DeQueue()
 				if err != nil {
@@ -135,7 +148,7 @@ func TestGPQ(t *testing.T) {
 	}
 
 	wg.Wait()
-	log.Println("Sent", atomic.LoadUint64(&sent), "Received", atomic.LoadUint64(&received), "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
+	log.Println("Sent", atomic.LoadUint64(&sent), "Received", atomic.LoadUint64(&received), "Timed Out", atomic.LoadUint64(&timedOut), "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
 
 	// Wait for all db sessions to sync to disk
 	queue.Close()

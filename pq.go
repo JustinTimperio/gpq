@@ -111,3 +111,19 @@ func (pq *CorePriorityQueue[T]) Remove(item *schema.Item[T]) {
 	defer pq.mutex.Unlock()
 	gheap.Remove[T](pq, item.Index)
 }
+
+func (pq *CorePriorityQueue[T]) NoLockDeQueue() {
+	old := pq.items
+	n := len(old)
+	item := old[n-1]
+	old[n-1] = nil  // avoid memory leak
+	item.Index = -1 // for safety
+	pq.items = old[0 : n-1]
+
+	// Check if the bucket is now empty
+	if len(pq.items) == 0 {
+		pq.bpq.Remove(item.Priority)
+	}
+
+	atomic.AddUint64(&pq.bpq.ObjectsInQueue, ^uint64(0))
+}

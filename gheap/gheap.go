@@ -31,6 +31,7 @@ type Heap[T any, S any] interface {
 	sort.Interface
 	EnQueue(x S)                                // add x as element Len()
 	DeQueue() (uint64, []byte, int64, T, error) // remove and return element Len() - 1.
+	NoLockDeQueue()
 }
 
 // Init establishes the heap invariants required by the other routines in this package.
@@ -65,9 +66,20 @@ func DeQueue[T any, S any](h Heap[T, S]) (batchNumber uint64, diskUUID []byte, p
 	return h.DeQueue()
 }
 
+func NoLockDeQueue[T any, S any](h Heap[T, S]) {
+	if h.Len() == 0 {
+		return
+	}
+	n := h.Len() - 1
+	h.Swap(0, n)
+	down(h, 0, n)
+	h.NoLockDeQueue()
+	return
+}
+
 // Remove removes and returns the element at index i from the heap.
 // The complexity is O(log n) where n = h.Len().
-func Remove[T any, S any](h Heap[T, S], i int) (batchNumber uint64, diskUUID []byte, priority int64, data T, err error) {
+func Remove[T any, S any](h Heap[T, S], i int) {
 	n := h.Len() - 1
 	if n != i {
 		h.Swap(i, n)
@@ -75,7 +87,8 @@ func Remove[T any, S any](h Heap[T, S], i int) (batchNumber uint64, diskUUID []b
 			up(h, i)
 		}
 	}
-	return h.DeQueue()
+	h.NoLockDeQueue()
+	return
 }
 
 // Prioritize re-establishes the heap ordering after the element at index i has changed its value.
