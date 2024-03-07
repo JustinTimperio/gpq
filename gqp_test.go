@@ -17,14 +17,15 @@ import (
 func TestGPQ(t *testing.T) {
 
 	var (
-		total      int  = 100000
+		total      int  = 10000000
 		print      bool = false
 		syncToDisk bool = true
 		lazy       bool = true
 		batchSize  int  = 1000
-		retries    int  = 20
 		sent       uint64
 		received   uint64
+		missed     int64
+		hits       int64
 	)
 
 	// Create a pprof file
@@ -99,9 +100,6 @@ func TestGPQ(t *testing.T) {
 		}()
 	}
 
-	var missed int64
-	var hits int64
-
 	wg.Add(2)
 	for i := 0; i < 2; i++ {
 		go func() {
@@ -109,33 +107,30 @@ func TestGPQ(t *testing.T) {
 
 			var lastPriority int64
 
-			for i := 0; i < retries; i++ {
-				for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 {
-					timer := time.Now()
-					priority, item, err := queue.DeQueue()
-					if err != nil {
-						if print {
-							log.Println("Hits", hits, "Misses", missed, "Sent", sent, "Recived", missed+hits, err)
-						}
-						time.Sleep(10 * time.Millisecond)
-						lastPriority = 0
-						continue
-					}
-					atomic.AddUint64(&received, 1)
+			for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received) < uint64(total) {
+				timer := time.Now()
+				priority, item, err := queue.DeQueue()
+				if err != nil {
 					if print {
-						log.Println("DeQueue", priority, received, item, time.Since(timer))
+						log.Println("Hits", hits, "Misses", missed, "Sent", sent, "Received", missed+hits, err)
 					}
-
-					if lastPriority > priority {
-						missed++
-					} else {
-						hits++
-					}
-					lastPriority = priority
+					time.Sleep(10 * time.Millisecond)
+					lastPriority = 0
+					continue
 				}
-				time.Sleep(20 * time.Millisecond)
-				log.Println("Retrying", i)
+				atomic.AddUint64(&received, 1)
+				if print {
+					log.Println("DeQueue", priority, received, item, time.Since(timer))
+				}
+
+				if lastPriority > priority {
+					missed++
+				} else {
+					hits++
+				}
+				lastPriority = priority
 			}
+			time.Sleep(500 * time.Millisecond)
 		}()
 	}
 

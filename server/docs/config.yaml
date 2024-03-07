@@ -1,0 +1,10 @@
+port: 4040
+host_name: "localhost"
+settings_db_path: "/opt/gpq/settings-db"
+log_path: "/opt/gpq/gpq.log"
+stdout: false
+auth_topics: true
+auth_settings: true
+auth_management: true
+admin_user: "admin"
+admin_pass: "admin"

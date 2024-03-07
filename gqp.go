@@ -196,6 +196,16 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalation
 
 		obj.DiskUUID = key
 
+		g.BatchMutex.Lock()
+		bnum := g.BatchNumber
+		g.BatchCounter++
+		if g.BatchCounter == uint64(g.BatchSize) {
+			g.BatchCounter = 0
+			g.BatchNumber++
+		}
+		g.SyncedBatches.Store(g.BatchNumber, false)
+		g.BatchMutex.Unlock()
+
 		// Encode the item
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
@@ -204,15 +214,6 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalation
 			return err
 		}
 		value := buf.Bytes()
-
-		g.BatchMutex.Lock()
-		if g.BatchCounter == uint64(g.BatchSize) {
-			g.BatchCounter = 0
-			g.BatchNumber++
-		}
-		g.SyncedBatches.Store(g.BatchNumber, false)
-		bnum := g.BatchNumber
-		g.BatchMutex.Unlock()
 
 		// Send the item to the disk cache
 		if g.LazyDiskCache {
