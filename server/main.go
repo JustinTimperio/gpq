@@ -174,7 +174,6 @@ func main() {
 	if settings.Settings.AuthTopics {
 		TopicRoutes.Use(routes.GenerateAuthMiddleWare(gpqs))
 	}
-	TopicRoutes.GET("/list", gpqs.ListTopics)
 	TopicRoutes.POST("/:name/raw/enqueue", gpqs.RawReceive)
 	TopicRoutes.GET("/:name/raw/dequeue", gpqs.RawServe)
 	TopicRoutes.POST("/:name/arrow/enqueue", gpqs.ArrowReceive)
@@ -186,16 +185,17 @@ func main() {
 	if settings.Settings.AuthManagement {
 		ManagementRoutes.Use(routes.GenerateAuthMiddleWare(gpqs))
 	}
-	ManagementRoutes.POST("/add_topic", gpqs.AddTopic)
-	ManagementRoutes.POST("/remove_topic", gpqs.RemoveTopic)
+	ManagementRoutes.GET("/topic/list", gpqs.ListTopics)
+	ManagementRoutes.POST("/topic/add", gpqs.AddTopic)
+	ManagementRoutes.POST("/topic/remove", gpqs.RemoveTopic)
 
 	// User Management Routes
 	// These routes are only accessible by the admin user
 	if settings.Settings.AuthSettings {
 		SettingsRoutes.Use(routes.GenerateAdminMiddleWare(gpqs))
 	}
-	SettingsRoutes.POST("/add_user", gpqs.AddUser)
-	SettingsRoutes.POST("/remove_user", gpqs.RemoveUser)
+	SettingsRoutes.POST("/user/add", gpqs.AddUser)
+	SettingsRoutes.POST("/user/remover", gpqs.RemoveUser)
 
 	// Finally, start the server
 	logger.Infow("Server starting...", "port", settings.Settings.Port, "host_name", settings.Settings.HostName)

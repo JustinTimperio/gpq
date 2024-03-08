@@ -22,23 +22,23 @@ type Token struct {
 
 type Settings struct {
 	// Server
-	Port     int    `koanf:"port"`
-	HostName string `koanf:"host_name"`
+	Port     int    `koanf:"gpq_server_port"`
+	HostName string `koanf:"gpq_server_hostname"`
 
 	// Paths
-	SettingsDBPath string `koanf:"settings_db_path"`
-	ConfigPath     string `koanf:"config_path"`
-	LogPath        string `koanf:"log_path"`
-	STDOut         bool   `koanf:"stdout"`
+	SettingsDBPath string `koanf:"gpq_settings_path"`
+	ConfigPath     string `koanf:"gpq_config_path"`
+	LogPath        string `koanf:"gpq_log_path"`
+	STDOut         bool   `koanf:"gpq_stdout"`
 
 	// Auth
-	AuthTopics     bool `koanf:"auth_topics"`
-	AuthSettings   bool `koanf:"auth_settings"`
-	AuthManagement bool `koanf:"auth_management"`
+	AuthTopics     bool `koanf:"gpq_auth_topics"`
+	AuthSettings   bool `koanf:"gpq_auth_settings"`
+	AuthManagement bool `koanf:"gpq_auth_management"`
 
 	// Admin
-	AdminUser string `koanf:"admin_user"`
-	AdminPass string `koanf:"admin_pass"`
+	AdminUser string `koanf:"gpq_admin_user"`
+	AdminPass string `koanf:"gpq_admin_pass"`
 }
 
 type Topic struct {

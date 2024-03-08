@@ -3,30 +3,37 @@
 </p>
 
 <h4 align="center">
-	GPQ is an extremely fast and flexible priority queue, capable of a few million transactions a second when run in RAM and tens of thousands of transactions a second when synced to disk. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
+	GPQ is an extremely fast and flexible priority queue, capable of a few million transactions a second when run in RAM and hundreds of thousands of transactions a second when synced to disk. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
 </h4>
 
 
 ## Table of Contents
-1. [Table of Contents](https://github.com/JustinTimperio/gpq?tab=readme-ov-file#table-of-contents)
-2. [Background](https://github.com/JustinTimperio/gpq?tab=readme-ov-file#background)
-4. [Benchmarks](https://github.com/JustinTimperio/gpq?tab=readme-ov-file#benchmarks)
-3. [Usage](https://github.com/JustinTimperio/gpq?tab=readme-ov-file#usage)
-5. [Contributing](https://github.com/JustinTimperio/gpq?tab=readme-ov-file#contributing)
-6. [License](https://github.com/JustinTimperio/gpq?tab=readme-ov-file#license)
+- [Table of Contents](#table-of-contents)
+- [Background](#background)
+- [Benchmarks](#benchmarks)
+- [Server Usage](#server-usage)
+- [Direct Usage](#direct-usage)
+  - [Prerequisites](#prerequisites)
+  - [Import Directly](#import-directly)
+  - [API Reference](#api-reference)
+  - [Submitting Items to the Queue](#submitting-items-to-the-queue)
+- [Contributing](#contributing)
+  - [We Develop with Github](#we-develop-with-github)
+  - [All Code Changes Happen Through Pull Requests](#all-code-changes-happen-through-pull-requests)
+  - [Any contributions you make will be under the MIT Software License](#any-contributions-you-make-will-be-under-the-mit-software-license)
+  - [Report bugs using Github's Issues](#report-bugs-using-githubs-issues)
+  - [Write bug reports with detail, background, and sample code](#write-bug-reports-with-detail-background-and-sample-code)
+  - [License](#license)
+- [License](#license-1)
 
 ## Background
 GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https://en.wikipedia.org/wiki/Fibonacci_heap) and wanted to find something faster. I was disappointed by the state of research and libraries being used by most common applications, so GPQ is meant to be a highly flexible framework that can support a multitude of workloads.
 
-### Other Priority Queues I'm Working On
-- [fibheap (Fibonacci Heaps)](https://github.com/JustinTimperio/fibheap)
-- [gpq (Go Priority Queue)](https://github.com/JustinTimperio/gpq)
-- [rpq (Rust Priority Queue)](https://github.com/JustinTimperio/rpq)
 
 ## Benchmarks
 Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, Zig, and Go to measure GPQ's performance against the standard implementations of other languages. 
 
-**While not a direct comparison, 10 million entries fully enqueued and dequeued (WITHOUT multiple routines) takes about 3.5 seconds with Go/GPQ, 5.5 seconds with Zig, 6 seconds with Rust, and about 9 seconds for C++**. (Happy to have someone who knows C++ or Rust comment here and update what I have in [bench](https://github.com/JustinTimperio/gpq/tree/master/bench))
+**While not a direct comparison, 10 million entries fully enqueued and dequeued (WITHOUT multiple routines) takes about 3.5 seconds with Go/GPQ, 5.5 seconds with Zig, 6 seconds with Rust, and about 9 seconds for C++**. (Happy to have someone who knows C++ or Rust or Zig well to comment here and update what I have in [bench](https://github.com/JustinTimperio/gpq/tree/master/bench))
 
 
 <p align="center">
@@ -36,14 +43,20 @@ Due to the fact that most operations are done in constant time `O(1)` or logarit
 </p>
 
 
+## Server Usage
+GPQ includes a fully featured server implementation that supports, users, topics, token auth, batching through avro or arrow, settings and state recovery, and graceful exits among many other features.
 
-## Usage
+The Server comes with it's own documents which you can read here: [ReadMe](https://github.com/JustinTimperio/gpq/server)
+
+
+## Direct Usage
 
 ### Prerequisites 
 For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github.com/cornelk/hashmap) and [BadgerDB](https://github.com/dgraph-io/badger). 
 
 ### Import Directly
-GPQ is primarily a embeddable priority queue meant to be used at the core of critical workloads that require complex queueing and delivery order guarantees. The best way to use it is just to import it.
+GPQ at the core is a embeddable priority queue meant to be used at the core of critical workloads that require complex queueing and delivery order guarantees. The best way to use it is just to import it.
+
 
 ```go
 import "github.com/JustinTimperio/gpq"
@@ -61,7 +74,7 @@ import "github.com/JustinTimperio/gpq"
 Once you have an initialized queue you can easily submit items like the following:
 ```go
 
-queue := gpq.NewGPQ[int](10, false, "/path/for/disk/sync")
+queue := gpq.NewGPQ[int](10, false, "/path/for/disk/sync", true, 1000)
 
 var (
 	data int = 1
@@ -77,115 +90,6 @@ queue.EnQueue(data, priority, shouldEscalate, escalationRate, canTimeout, timeou
 ```
 
 You have a few options when you submit a job such as if the item should escalate over time if not sent, or inversely can timeout if it has been enqueued to long to be relevant anymore.
-
-### Example Usage
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-	"math/rand"
-	"sync"
-	"sync/atomic"
-	"time"
-
-	"github.com/JustinTimperio/gpq"
-)
-
-type TestStruct struct {
-	ID   int
-	Name string
-}
-
-func main() {
-
-	// Set the options for the run
-	var (
-		total    	int  = 100000
-		print		bool = false
-		syncToDisk	bool = false 
-		retries		int  = 10
-		sent		uint64
-		received	uint64
-	 	missed		int64
-	 	hits		int64
-	)
-	queue, err := gpq.NewGPQ[int](10, syncToDisk, "/tmp/gpq/")
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	wg := &sync.WaitGroup{}
-	wg.Add(21)
-
-	// Simulate Many Writers
-	timer := time.Now()
-	for i := 0; i < 20; i++ {
-		go func() {
-			defer wg.Done()
-			for i := 0; i < total/20; i++ {
-				p := i % 10
-				timer := time.Now()
-				err := queue.EnQueue(
-					i,
-					int64(p),
-					true,
-					time.Duration(time.Second),
-					true,
-					time.Duration(time.Second*10),
-				)
-				if err != nil {
-					log.Fatalln(err)
-				}
-				if print {
-					log.Println("EnQueue", p, time.Since(timer))
-				}
-				atomic.AddUint64(&sent, 1)
-			}
-		}()
-	}
-
-
-	// Simulate a single Reader
-	go func() {
-		defer wg.Done()
-
-		var lastPriority int64
-		for i := 0; i < retries; i++ {
-			for atomic.LoadUint64(&queue.TotalLen) > 0 {
-				timer := time.Now()
-				priority, item, err := queue.DeQueue()
-				if err != nil {
-					log.Println(sent, missed+hits, err)
-					time.Sleep(10 * time.Millisecond)
-					lastPriority = 0
-					continue
-				}
-				received++
-				if print {
-					log.Println("DeQueue", priority, received, item, time.Since(timer))
-				}
-
-				if lastPriority > priority {
-					missed++
-				} else {
-					hits++
-				}
-				lastPriority = priority
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-	}()
-
-	wg.Wait()
-	log.Println("Sent", sent, "Received", received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
-
-	// Wait for all db sessions to sync to disk
-	queue.ActiveDBSessions.Wait()
-}
-```
-
 
 ## Contributing
 GPQ is actively looking for maintainers so feel free to help out when:

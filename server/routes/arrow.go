@@ -31,7 +31,7 @@ import (
 // @Param			timeout_duration	query		string	true	"Timeout Duration"
 // @Success		200					{string}	string	"OK"
 // @Failure		400					{string}	string	"Bad Request"
-// @Router			/arrow/receive/{name} [post]
+// @Router			/topic/{name}/arrow/enqueue [post]
 // @Security		ApiKeyAuth
 // @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) ArrowReceive(c echo.Context) error {
@@ -145,7 +145,7 @@ func (rt RouteHandler) ArrowReceive(c echo.Context) error {
 // @Param			records	query		int		false	"Number of records to collect"
 // @Success		200		{array}		byte	"Arrow Data"
 // @Failure		400		{string}	string	"Bad Request"
-// @Router			/arrow/serve/{name} [get]
+// @Router			/topic/{name}/arrow/dequeue [get]
 // @Security		ApiKeyAuth
 // @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) ArrowServe(c echo.Context) error {

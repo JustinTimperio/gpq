@@ -26,7 +26,7 @@ import (
 // @Param			timeout_duration	query		string	true	"Timeout Duration"
 // @Success		200					{string}	string	"OK"
 // @Failure		400					{string}	string	"Bad Request"
-// @Router			/avro/receive/{name} [post]
+// @Router			/topic/{name}/avro/enqueue [post]
 // @Security		ApiKeyAuth
 // @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) AvroReceive(c echo.Context) error {
@@ -133,7 +133,7 @@ func (rt RouteHandler) AvroReceive(c echo.Context) error {
 // @Param			records	query		int		true	"Record Count"
 // @Success		200		{string}	string	"OK"
 // @Failure		400		{string}	string	"Bad Request"
-// @Router			/avro/serve/{name} [get]
+// @Router			/topic/{name}/avro/dequeue [get]
 // @Security		ApiKeyAuth
 // @Param			Authorization	header	string	true	"Bearer {token}"
 // @Param			records			query	int		true	"Number of records to collect"

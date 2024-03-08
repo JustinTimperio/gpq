@@ -29,7 +29,7 @@ import (
 // @Param			batch_size			query		int64	true	"Batch Size"
 // @Success		200					{string}	string	"OK"
 // @Failure		400					{string}	string	"Bad Request"
-// @Router			/topic/add [post]
+// @Router			/management/topic/add [post]
 // @Security		ApiKeyAuth
 // @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt *RouteHandler) AddTopic(c echo.Context) error {
@@ -124,7 +124,7 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 // @Param			name	query		string	true	"Topic Name"
 // @Success		200		{string}	string	"OK"
 // @Failure		400		{string}	string	"Bad Request"
-// @Router			/topic/remove [post]
+// @Router			/management/topic/remove [post]
 // @Security		ApiKeyAuth
 // @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) RemoveTopic(c echo.Context) error {
@@ -156,7 +156,7 @@ func (rt RouteHandler) RemoveTopic(c echo.Context) error {
 // @Produce		json
 // @Success		200	{string}	string	"OK"
 // @Failure		400	{string}	string	"Bad Request"
-// @Router			/topic/list [get]
+// @Router			/management/topic/list [get]
 // @Security		ApiKeyAuth
 // @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) ListTopics(c echo.Context) error {

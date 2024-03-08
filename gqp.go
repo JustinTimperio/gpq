@@ -89,8 +89,8 @@ func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string, lazyD
 	// Start the lazy disk loader
 	// This allows for items to be committed to the disk cache
 	// without waiting for a full disk sync and in batches
-	go gpq.LazyDiskLoader()
-	go gpq.LazyDiskDeleter()
+	go gpq.lazyDiskLoader()
+	go gpq.lazyDiskDeleter()
 
 	if diskCache {
 		if diskCachePath == "" {
@@ -453,7 +453,7 @@ func (g *GPQ[d]) Peek() (data d, err error) {
 
 }
 
-func (g *GPQ[d]) LazyDiskLoader() {
+func (g *GPQ[d]) lazyDiskLoader() {
 	g.ActiveDBSessions.Add(1)
 	defer g.ActiveDBSessions.Done()
 
@@ -499,7 +499,7 @@ func (g *GPQ[d]) LazyDiskLoader() {
 	}
 }
 
-func (g *GPQ[d]) LazyDiskDeleter() {
+func (g *GPQ[d]) lazyDiskDeleter() {
 	g.ActiveDBSessions.Add(1)
 	defer g.ActiveDBSessions.Done()
 

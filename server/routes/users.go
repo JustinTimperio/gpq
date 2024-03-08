@@ -12,6 +12,19 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// @Summary		Add User
+// @Description	Adds a user to the database
+// @Tags			Users
+// @ID				users-add
+// @Accept			json
+// @Produce		json
+// @Param			credentials	body		schema.Credentials	true	"User Credentials"
+// @Success		200			{string}	string				"User added"
+// @Failure		400			{string}	string				"Bad Request"
+// @Failure		500			{string}	string				"Internal Server Error"
+// @Router			/settings/user/add [post]
+// @Security		ApiKeyAuth
+// @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) AddUser(c echo.Context) error {
 	// Parse and decode the request body into a new `Credentials` instance
 	creds := &schema.Credentials{}
@@ -38,6 +51,21 @@ func (rt RouteHandler) AddUser(c echo.Context) error {
 	return c.JSON(http.StatusOK, "User added")
 }
 
+// @Summary		Remove User
+// @Description	Removes a user from the database
+// @Tags			Users
+// @ID				users-remove
+// @Accept			json
+// @Produce		json
+// @Param			username	path		string	true	"Username"
+// @Success		200			{string}	string	"User removed"
+// @Failure		400			{string}	string	"Bad Request"
+// @Failure		403			{string}	string	"Forbidden"
+// @Failure		404			{string}	string	"Not Found"
+// @Failure		500			{string}	string	"Internal Server Error"
+// @Router			/settings/user/remove [delete]
+// @Security		ApiKeyAuth
+// @Param			Authorization	header	string	true	"Bearer {token}"
 func (rt RouteHandler) RemoveUser(c echo.Context) error {
 	rt.SettingsDB.Update(func(txn *badger.Txn) error {
 
