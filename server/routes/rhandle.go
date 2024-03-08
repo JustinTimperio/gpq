@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"sync"
 	"time"
 
 	"github.com/JustinTimperio/gpq"
@@ -29,6 +30,7 @@ type RouteHandler struct {
 	ValidTokens    *hashmap.Map[string, schema.Token]
 	SettingsDB     *badger.DB
 	Logger         *zap.SugaredLogger
+	WaitForSync    *sync.WaitGroup
 }
 
 // Prioritize reprioritizes the GPQ at the specified rate

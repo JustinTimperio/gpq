@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/gob"
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -94,28 +96,35 @@ func main() {
 		ValidTokens:    hashmap.New[string, schema.Token](),
 		SettingsDB:     SettingsDB,
 		Logger:         logger,
+		WaitForSync:    &sync.WaitGroup{},
 	}
 
 	// Rebuild the GPQs and ValidTokens from the SettingsDB
 	rebuildFromDB(&gpqs)
 
 	// Launch a cleanup routine to in the case that the server is restarted
-	// TODO: In the future this should stop the server before draining and syncing to disk
 	go func() {
+		gpqs.WaitForSync.Add(1)
+		defer gpqs.WaitForSync.Done()
+		// Wait for Interupt
 		<-interupt
 
 		gpqs.Logger.Infow("Server shutting down topics and syncing disk...")
 
+		// Shutdown the server gracefully
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		gpqs.WS.Shutdown(ctx)
+
+		// Close the GPQs
 		gpqs.Topics.Range(func(key string, gpq *gpq.GPQ[[]byte]) bool {
 			gpq.Close()
 			return true
 		})
 
+		// Sync the SettingsDB
 		gpqs.SettingsDB.Sync()
 		gpqs.SettingsDB.Close()
-
-		os.Exit(0)
-
 	}()
 
 	// Add the admin user to the settings DB
@@ -199,7 +208,8 @@ func main() {
 
 	// Finally, start the server
 	logger.Infow("Server starting...", "port", settings.Settings.Port, "host_name", settings.Settings.HostName)
-	e.Logger.Fatal(e.Start(settings.Settings.HostName + ":" + fmt.Sprintf("%d", settings.Settings.Port)))
+	e.Logger.Info(e.Start(settings.Settings.HostName + ":" + fmt.Sprintf("%d", settings.Settings.Port)))
+	gpqs.WaitForSync.Wait()
 
 }
 
