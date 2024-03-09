@@ -76,6 +76,7 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 	}
 
 	// Verify that the name is not a reserved word
+	// This isn't really needed but for the sake of security
 	for _, word := range RESERVEDKEYSPREFIXES {
 		if strings.Contains(topic.Name, word) {
 			return echo.NewHTTPError(400, "Topic name contains a reserved word")

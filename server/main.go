@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"sync"
@@ -178,6 +180,7 @@ func main() {
 	TopicRoutes := e.Group("/topic")
 	ManagementRoutes := e.Group("/management")
 	SettingsRoutes := e.Group("/settings")
+	e.GET("/debug/pprof/*", echo.WrapHandler(http.DefaultServeMux))
 
 	// Topic Routes
 	if settings.Settings.AuthTopics {
