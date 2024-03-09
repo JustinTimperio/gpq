@@ -20,6 +20,7 @@ var (
 	print       bool = false
 	retries     int  = 5
 	nMaxBuckets int  = 100
+	lazy        bool = true
 )
 
 func main() {
@@ -69,7 +70,7 @@ func iter(prioritize bool) {
 			var reprioritized uint64
 
 			// Run the bench function
-			t := bench(total, prioritize, print, buckets, &sent, &received, &reprioritized)
+			t := bench(total, prioritize, print, buckets, &sent, &received, &reprioritized, lazy)
 
 			// Write the statistics to the CSV file
 			stats := []string{
@@ -85,10 +86,10 @@ func iter(prioritize bool) {
 	}
 }
 
-func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, received *uint64, reprioritized *uint64) string {
+func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, received *uint64, reprioritized *uint64, lazy bool) string {
 
 	// Create a new GPQ with a h-heap width of 100 using the TestStruct as the data type
-	queue, err := gpq.NewGPQ[int](nBuckets, false, "/tmp/gpq/")
+	queue, err := gpq.NewGPQ[int](nBuckets, false, "/tmp/gpq/", lazy, 1000)
 	if err != nil {
 		log.Fatalln(err)
 	}

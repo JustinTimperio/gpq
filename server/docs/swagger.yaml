@@ -1,0 +1,554 @@
+basePath: /v1
+definitions:
+  schema.Credentials:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  schema.Token:
+    properties:
+      is_admin:
+        type: boolean
+      timeout:
+        type: string
+      token:
+        type: string
+      username:
+        type: string
+    type: object
+host: localhost:4040
+info:
+  contact: {}
+  description: This is the API for the GPQ (Go Priority Queue) server.
+  license:
+    name: MIT License
+  title: Swagger GPQ API
+  version: "1.0"
+paths:
+  /auth:
+    post:
+      consumes:
+      - application/json
+      description: Authenticates a user and returns a token
+      operationId: auth
+      parameters:
+      - description: Credentials
+        in: body
+        name: credentials
+        required: true
+        schema:
+          $ref: '#/definitions/schema.Credentials'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/schema.Token'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+      summary: Authenticate
+      tags:
+      - Auth
+  /management/topic/add:
+    post:
+      consumes:
+      - application/json
+      description: Adds a topic to the gpq server
+      operationId: add-topic
+      parameters:
+      - description: Topic Name
+        in: query
+        name: name
+        required: true
+        type: string
+      - description: Disk Path
+        in: query
+        name: disk_path
+        required: true
+        type: string
+      - description: Buckets
+        in: query
+        name: buckets
+        required: true
+        type: integer
+      - description: Sync To Disk
+        in: query
+        name: sync_to_disk
+        required: true
+        type: boolean
+      - description: Reprioritize
+        in: query
+        name: reprioritize
+        required: true
+        type: boolean
+      - description: Reprioritize Rate
+        in: query
+        name: reprioritize_rate
+        required: true
+        type: string
+      - description: Batch Size
+        in: query
+        name: batch_size
+        required: true
+        type: integer
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Add Topic
+      tags:
+      - Topics
+  /management/topic/list:
+    get:
+      description: Lists all topics in the gpq server
+      operationId: list-topics
+      parameters:
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: List Topics
+      tags:
+      - Topics
+  /management/topic/remove:
+    post:
+      consumes:
+      - application/json
+      description: Removes a topic from the gpq server
+      operationId: remove-topic
+      parameters:
+      - description: Topic Name
+        in: query
+        name: name
+        required: true
+        type: string
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Remove Topic
+      tags:
+      - Topics
+  /settings/user/add:
+    post:
+      consumes:
+      - application/json
+      description: Adds a user to the database
+      operationId: users-add
+      parameters:
+      - description: User Credentials
+        in: body
+        name: credentials
+        required: true
+        schema:
+          $ref: '#/definitions/schema.Credentials'
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User added
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Add User
+      tags:
+      - Users
+  /settings/user/remove:
+    delete:
+      consumes:
+      - application/json
+      description: Removes a user from the database
+      operationId: users-remove
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User removed
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Remove User
+      tags:
+      - Users
+  /topic/{name}/arrow/dequeue:
+    get:
+      description: Batches and serves Arrow data from a topic
+      operationId: arrow-serve
+      parameters:
+      - description: Topic Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Number of records to collect
+        in: query
+        name: records
+        type: integer
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/vnd.apache.arrow.stream
+      responses:
+        "200":
+          description: Arrow Data
+          schema:
+            items:
+              type: integer
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Serve Arrow Data
+      tags:
+      - Arrow
+  /topic/{name}/arrow/enqueue:
+    post:
+      consumes:
+      - application/vnd.apache.arrow
+      description: Receives Arrow data and enqueues it into a topic
+      operationId: arrow-receive
+      parameters:
+      - description: Topic Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Priority
+        in: query
+        name: priority
+        required: true
+        type: integer
+      - description: Should Escalate
+        in: query
+        name: should_escalate
+        required: true
+        type: boolean
+      - description: Escalate Every
+        in: query
+        name: escalate_every
+        required: true
+        type: string
+      - description: Can Timeout
+        in: query
+        name: can_timeout
+        required: true
+        type: boolean
+      - description: Timeout Duration
+        in: query
+        name: timeout_duration
+        required: true
+        type: string
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Receive Arrow Data
+      tags:
+      - Arrow
+  /topic/{name}/avro/dequeue:
+    get:
+      consumes:
+      - application/json
+      description: Batches and serves Avro data from a topic
+      operationId: avro-serve
+      parameters:
+      - description: Topic Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Record Count
+        in: query
+        name: records
+        required: true
+        type: integer
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: Number of records to collect
+        in: query
+        name: records
+        required: true
+        type: integer
+      - description: Topic Name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/vnd.apache.avro
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Serve Avro Data
+      tags:
+      - Avro
+  /topic/{name}/avro/enqueue:
+    post:
+      consumes:
+      - application/vnd.apache.avro
+      description: Receives Avro data and enqueues it into a topic
+      operationId: avro-receive
+      parameters:
+      - description: Topic Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Priority
+        in: query
+        name: priority
+        required: true
+        type: integer
+      - description: Should Escalate
+        in: query
+        name: should_escalate
+        required: true
+        type: boolean
+      - description: Escalate Every
+        in: query
+        name: escalate_every
+        required: true
+        type: string
+      - description: Can Timeout
+        in: query
+        name: can_timeout
+        required: true
+        type: boolean
+      - description: Timeout Duration
+        in: query
+        name: timeout_duration
+        required: true
+        type: string
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Receive Avro Data
+      tags:
+      - Avro
+  /topic/{name}/raw/dequeue:
+    get:
+      consumes:
+      - application/octet-stream
+      description: Dequeues a message from the topic with highest priority
+      operationId: raw-serve
+      parameters:
+      - description: Topic Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Serve Raw Data
+      tags:
+      - Raw
+  /topic/{name}/raw/enqueue:
+    post:
+      consumes:
+      - application/octet-stream
+      description: Receives Raw data and enqueues it into a topic
+      operationId: enqueue-raw
+      parameters:
+      - description: Topic Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Priority
+        in: query
+        name: priority
+        required: true
+        type: integer
+      - description: Should Escalate
+        in: query
+        name: should_escalate
+        required: true
+        type: boolean
+      - description: Escalate Every
+        in: query
+        name: escalate_every
+        required: true
+        type: string
+      - description: Can Timeout
+        in: query
+        name: can_timeout
+        required: true
+        type: boolean
+      - description: Timeout Duration
+        in: query
+        name: timeout_duration
+        required: true
+        type: string
+      - description: Bearer {token}
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Receive Raw Data
+      tags:
+      - Raw
+swagger: "2.0"

@@ -1,6 +1,8 @@
 package schema
 
-import "time"
+import (
+	"time"
+)
 
 type Item[d any] struct {
 	// User
@@ -16,4 +18,11 @@ type Item[d any] struct {
 	SubmittedAt   time.Time
 	LastEscalated time.Time
 	Index         int
+	BatchNumber   uint64
+}
+
+type LazyMessageQueueItem struct {
+	ID               []byte
+	Data             []byte
+	TransactionBatch uint64
 }

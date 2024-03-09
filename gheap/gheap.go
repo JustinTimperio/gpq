@@ -29,8 +29,9 @@ import (
 // use [heap.EnQueue] and [heap.DeQueue].
 type Heap[T any, S any] interface {
 	sort.Interface
-	EnQueue(x S)                        // add x as element Len()
-	DeQueue() ([]byte, int64, T, error) // remove and return element Len() - 1.
+	EnQueue(x S)                                // add x as element Len()
+	DeQueue() (uint64, []byte, int64, T, error) // remove and return element Len() - 1.
+	NoLockDeQueue()
 }
 
 // Init establishes the heap invariants required by the other routines in this package.
@@ -55,9 +56,9 @@ func EnQueue[T any, S any](h Heap[T, S], x S) {
 // DeQueue removes and returns the minimum element (according to Less) from the heap.
 // The complexity is O(log n) where n = h.Len().
 // DeQueue is equivalent to [Remove](h, 0).
-func DeQueue[T any, S any](h Heap[T, S]) (diskUUID []byte, priority int64, data T, err error) {
+func DeQueue[T any, S any](h Heap[T, S]) (batchNumber uint64, diskUUID []byte, priority int64, data T, err error) {
 	if h.Len() == 0 {
-		return nil, -1, data, errors.New("No items in the queue")
+		return 0, nil, -1, data, errors.New("No items in the queue")
 	}
 	n := h.Len() - 1
 	h.Swap(0, n)
@@ -65,9 +66,20 @@ func DeQueue[T any, S any](h Heap[T, S]) (diskUUID []byte, priority int64, data 
 	return h.DeQueue()
 }
 
+func NoLockDeQueue[T any, S any](h Heap[T, S]) {
+	if h.Len() == 0 {
+		return
+	}
+	n := h.Len() - 1
+	h.Swap(0, n)
+	down(h, 0, n)
+	h.NoLockDeQueue()
+	return
+}
+
 // Remove removes and returns the element at index i from the heap.
 // The complexity is O(log n) where n = h.Len().
-func Remove[T any, S any](h Heap[T, S], i int) (diskUUID []byte, priority int64, data T, err error) {
+func Remove[T any, S any](h Heap[T, S], i int) {
 	n := h.Len() - 1
 	if n != i {
 		h.Swap(i, n)
@@ -75,7 +87,8 @@ func Remove[T any, S any](h Heap[T, S], i int) (diskUUID []byte, priority int64,
 			up(h, i)
 		}
 	}
-	return h.DeQueue()
+	h.NoLockDeQueue()
+	return
 }
 
 // Prioritize re-establishes the heap ordering after the element at index i has changed its value.
