@@ -9,6 +9,7 @@ import (
 
 	"github.com/cornelk/hashmap"
 	"github.com/dgraph-io/badger/v4"
+	"github.com/hashicorp/raft"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
 )
@@ -31,6 +32,7 @@ type RouteHandler struct {
 	SettingsDB     *badger.DB
 	Logger         *zap.SugaredLogger
 	WaitForSync    *sync.WaitGroup
+	Raft           *raft.Raft
 }
 
 // Prioritize reprioritizes the GPQ at the specified rate

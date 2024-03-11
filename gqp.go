@@ -5,16 +5,15 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"math"
-	"sync"
-	"sync/atomic"
+	"os"
 	"time"
 
+	"github.com/JustinTimperio/gpq/fsm"
 	"github.com/JustinTimperio/gpq/schema"
 
-	"github.com/cornelk/hashmap"
-	"github.com/dgraph-io/badger/v4"
 	"github.com/google/uuid"
+	"github.com/hashicorp/raft"
+	raftboltdb "github.com/hashicorp/raft-boltdb"
 )
 
 // GPQ is a generic priority queue that supports priority levels and timeouts
@@ -22,142 +21,159 @@ import (
 // It also supports disk caching using badgerDB with the option to lazily disk writes and deletes
 // The GPQ is thread-safe and supports concurrent access
 type GPQ[d any] struct {
-	BucketCount int64
-	// Buckets is a map of priority buckets
-	Buckets *hashmap.Map[int64, *CorePriorityQueue[d]]
-	// BucketPrioritizeLockMap is a map of locks for each priority bucket
-	BucketPrioritizeLockMap *hashmap.Map[int64, *sync.Mutex]
-	// NonEmptyBuckets is a priority queue of non-empty buckets
-	NonEmptyBuckets *BucketPriorityQueue
-	// ActiveDBSessions is a wait group for active disk cache sessions
-	// It allows for items to be removed from the disk cache without waiting for a full disk sync
-	ActiveDBSessions *sync.WaitGroup
-	// DiskCache is a badgerDB used to store items in the GPQ
-	DiskCache *badger.DB
-	// IsDiskCacheEnabled is a boolean that indicates if the disk cache is enabled
-	DiskCacheEnabled bool
-	// LazyDiskCache is a boolean that indicates if the disk cache should be lazily deleted
-	LazyDiskCache bool
-	// LazyDiskMessageChan is a channel used to send messages to the lazy disk cache
-	LazyDiskSendChan chan schema.LazyMessageQueueItem
-	// LazyDiskDeleteChan is a channel used to send messages to the lazy disk cache
-	LazyDiskDeleteChan chan schema.LazyMessageQueueItem
-	// AllBatchesSynced is a channel used to signal when all batches have been synced
-	AllBatchesSynced *sync.WaitGroup
-	// SyncedBatches is a map of all synced batches
-	SyncedBatches *sync.Map
-	// BatchNumber is the current batch number
-	BatchNumber uint64
-	// BatchCounter is the counter for the current batch
-	BatchCounter uint64
-	// BatchMutex is a mutex used to lock the batch number
-	BatchMutex *sync.Mutex
-	// BatchSize is the size of each batch that is sent to the disk cache or deleted
-	BatchSize int64
+	// Raft is the raft consensus protocol
+	Raft *raft.Raft
+	// Options is the options for the GPQ
+	Options schema.GPQOptions
+	// FSM is the finite state machine for the GPQ
+	FSM *fsm.FSM[d]
+	// StableStore is the stable store for the GPQ
+	StableStore *raftboltdb.BoltStore
+	// CacheStore is the cache store for the GPQ
+	CacheStore *raft.LogCache
+	// SnapshotStore is the snapshot store for the GPQ
+	SnapshotStore *raft.FileSnapshotStore
+	// Transport is the transport for the GPQ
+	Transport *raft.NetworkTransport
 }
 
 // NewGPQ creates a new GPQ with the given number of buckets
 // The number of buckets is the number of priority levels you want to support
 // You must provide the number of buckets ahead of time and all priorities you submit
 // must be within the range of 0 to NumOfBuckets
-func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string, lazyDiskCache bool, batchSize int64) (*GPQ[d], error) {
-	bp := NewBucketPriorityQueue()
+func NewGPQ[d any](options schema.GPQOptions) (*GPQ[d], error) {
+
+	fmt.Println(options)
+
+	os.MkdirAll(options.RaftSnapshotPath, 0755)
+	os.Mkdir(options.DiskCachePath, 0755)
+
+	raftConfig := raft.DefaultConfig()
+	raftConfig.LocalID = raft.ServerID(options.RaftNodeID)
 
 	gpq := &GPQ[d]{
-		BucketCount:             int64(NumOfBuckets),
-		Buckets:                 hashmap.New[int64, *CorePriorityQueue[d]](),
-		NonEmptyBuckets:         bp,
-		DiskCacheEnabled:        diskCache,
-		ActiveDBSessions:        &sync.WaitGroup{},
-		BucketPrioritizeLockMap: hashmap.New[int64, *sync.Mutex](),
-		LazyDiskCache:           lazyDiskCache,
-		LazyDiskSendChan:        make(chan schema.LazyMessageQueueItem),
-		LazyDiskDeleteChan:      make(chan schema.LazyMessageQueueItem),
-		AllBatchesSynced:        &sync.WaitGroup{},
-		SyncedBatches:           &sync.Map{},
-		BatchNumber:             1,
-		BatchMutex:              &sync.Mutex{},
-		BatchSize:               batchSize,
+		Options: options,
 	}
 
-	for i := 0; i < NumOfBuckets; i++ {
-		pq := NewCorePriorityQueue[d](bp)
-		gpq.Buckets.Set(int64(i), &pq)
-		gpq.BucketPrioritizeLockMap.Set(int64(i), &sync.Mutex{})
+	var err error
+	gpq.FSM, err = fsm.NewFSM[d](gpq.Options)
+	if err != nil {
+		return nil, err
 	}
 
-	// Start the lazy disk loader
-	// This allows for items to be committed to the disk cache
-	// without waiting for a full disk sync and in batches
-	go gpq.lazyDiskLoader()
-	go gpq.lazyDiskDeleter()
+	gpq.StableStore, err = raftboltdb.NewBoltStore(options.RaftStableStorePath)
+	if err != nil {
+		return nil, err
+	}
+	// Wrap the store in a LogCache to improve performance.
+	gpq.CacheStore, err = raft.NewLogCache(options.RaftCacheSize, gpq.StableStore)
+	if err != nil {
+		return nil, err
+	}
+	gpq.SnapshotStore, err = raft.NewFileSnapshotStore(options.RaftSnapshotPath, options.RaftSnapshotRetain, os.Stdout)
+	if err != nil {
+		return nil, err
+	}
+	gpq.Transport, err = raft.NewTCPTransport(fmt.Sprintf("%s:%d", options.RaftBindAddress, options.RaftPort), nil, options.RaftPoolConnections, 30*time.Second, os.Stderr)
+	if err != nil {
+		return nil, err
+	}
 
-	if diskCache {
-		if diskCachePath == "" {
-			return gpq, errors.New("Disk cache path is required")
-		}
-		opts := badger.DefaultOptions(diskCachePath)
-		opts.Logger = nil
-		db, err := badger.Open(opts)
-		if err != nil {
-			return nil, errors.New("Error opening disk cache: " + err.Error())
-		}
-		gpq.DiskCache = db
-		var reEnqueued uint64
+	gpq.Raft, err = raft.NewRaft(raftConfig, gpq.FSM, gpq.CacheStore, gpq.StableStore, gpq.SnapshotStore, gpq.Transport)
+	if err != nil {
+		return nil, err
+	}
+	configuration := raft.Configuration{
+		Servers: []raft.Server{
+			{
+				ID:      raft.ServerID(options.RaftNodeID),
+				Address: raft.ServerAddress(fmt.Sprintf("%s:%d", options.RaftBindAddress, options.RaftPort)),
+			},
+		},
+	}
 
-		// Re-add items to the GPQ from the disk cache
-		err = gpq.DiskCache.View(func(txn *badger.Txn) error {
-			opts := badger.DefaultIteratorOptions
-			opts.PrefetchValues = false
-			it := txn.NewIterator(opts)
-			defer it.Close()
+	bf := gpq.Raft.BootstrapCluster(configuration)
+	if bf.Error() == errors.New("bootstrap only works on new clusters") {
+		fmt.Println("Cluster already bootstrapped")
+	}
 
-			for it.Rewind(); it.Valid(); it.Next() {
-				var value []byte
-				item := it.Item()
-				key := item.Key()
+	config := gpq.Raft.GetConfiguration()
+	if err := config.Error(); err != nil {
+		return nil, fmt.Errorf("Failed to get raft configuration: %v", err)
+	}
 
-				// Get the item from the disk cache
-				item, err := txn.Get(key)
-				if err != nil {
-					return err
+	if len(config.Configuration().Servers) > 1 {
+		return nil, fmt.Errorf("More than one server in the raft configuration")
+	}
+
+	/*
+		if options.DiskCache {
+			if options.DiskCachePath == "" {
+				return gpq, errors.New("Disk cache path is required")
+			}
+			opts := badger.DefaultOptions(options.DiskCachePath)
+			opts.Logger = nil
+			db, err := badger.Open(opts)
+			if err != nil {
+				return nil, errors.New("Error opening disk cache: " + err.Error())
+			}
+			gpq.DiskCache = db
+			var reEnqueued uint64
+
+			// Re-add items to the GPQ from the disk cache
+			err = gpq.DiskCache.View(func(txn *badger.Txn) error {
+				opts := badger.DefaultIteratorOptions
+				opts.PrefetchValues = false
+				it := txn.NewIterator(opts)
+				defer it.Close()
+
+				for it.Rewind(); it.Valid(); it.Next() {
+					var value []byte
+					item := it.Item()
+					key := item.Key()
+
+					// Get the item from the disk cache
+					item, err := txn.Get(key)
+					if err != nil {
+						return err
+					}
+					item.Value(func(val []byte) error {
+						value = append([]byte{}, val...)
+						return nil
+					})
+
+					if len(value) == 0 {
+						return errors.New("Error reading from disk cache: value is empty")
+					}
+
+					// Decode the item
+					var buf bytes.Buffer
+					buf.Write(value)
+					obj := schema.Item[d]{}
+					err = gob.NewDecoder(&buf).Decode(&obj)
+					if err != nil {
+						return errors.New("Error decoding item from disk cache: " + err.Error())
+					}
+
+					// Re-enqueue the item with the same parameters it had when it was enqueued
+					err = gpq.reQueue(obj.Data, obj.Priority, obj.ShouldEscalate, obj.EscalationRate, obj.CanTimeout, obj.Timeout, obj.DiskUUID)
+					if err != nil {
+						return err
+					}
+
+					reEnqueued++
 				}
-				item.Value(func(val []byte) error {
-					value = append([]byte{}, val...)
-					return nil
-				})
 
-				if len(value) == 0 {
-					return errors.New("Error reading from disk cache: value is empty")
-				}
-
-				// Decode the item
-				var buf bytes.Buffer
-				buf.Write(value)
-				obj := schema.Item[d]{}
-				err = gob.NewDecoder(&buf).Decode(&obj)
-				if err != nil {
-					return errors.New("Error decoding item from disk cache: " + err.Error())
-				}
-
-				// Re-enqueue the item with the same parameters it had when it was enqueued
-				err = gpq.reQueue(obj.Data, obj.Priority, obj.ShouldEscalate, obj.EscalationRate, obj.CanTimeout, obj.Timeout, obj.DiskUUID)
-				if err != nil {
-					return err
-				}
-
-				reEnqueued++
+				return nil
+			})
+			if err != nil {
+				return nil, errors.New("Error reading from disk cache: " + err.Error())
 			}
 
-			return nil
-		})
-		if err != nil {
-			return nil, errors.New("Error reading from disk cache: " + err.Error())
+		} else {
+			gpq.DiskCache = nil
 		}
-
-	} else {
-		gpq.DiskCache = nil
-	}
+	*/
 
 	return gpq, nil
 }
@@ -166,13 +182,18 @@ func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string, lazyD
 // The priorityBucket is the priority level of the item
 // The escalationRate is the amount of time before the item is escalated to the next priority level
 // The data is the data you want to store in the GPQ item
-func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalationRate time.Duration, canTimeout bool, timeout time.Duration) error {
+func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalationRate time.Duration, canTimeout bool, timeout time.Duration, lazyDiskComit bool) error {
 
-	if priorityBucket > g.BucketCount {
+	if priorityBucket > int64(g.Options.NumberOfBuckets) {
 		return errors.New("Priority bucket does not exist")
 	}
 
-	// Create the item
+	// Generate a UUID for the item
+	key, err := uuid.New().MarshalBinary()
+	if err != nil {
+		return err
+	}
+
 	obj := schema.Item[d]{
 		Data:           data,
 		Priority:       priorityBucket,
@@ -182,62 +203,39 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, escalate bool, escalation
 		Timeout:        timeout,
 		SubmittedAt:    time.Now(),
 		LastEscalated:  time.Now(),
+		DiskUUID:       key,
 	}
 
-	pq, _ := g.Buckets.Get(priorityBucket)
-
-	if g.DiskCacheEnabled {
-
-		// Generate a UUID for the item
-		key, err := uuid.New().MarshalBinary()
-		if err != nil {
-			return err
-		}
-
-		obj.DiskUUID = key
-
-		g.BatchMutex.Lock()
-		bnum := g.BatchNumber
-		g.BatchCounter++
-		if g.BatchCounter == uint64(g.BatchSize) {
-			g.BatchCounter = 0
-			g.BatchNumber++
-		}
-		g.SyncedBatches.Store(g.BatchNumber, false)
-		g.BatchMutex.Unlock()
-
-		// Encode the item
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		err = enc.Encode(obj)
-		if err != nil {
-			return err
-		}
-		value := buf.Bytes()
-
-		// Send the item to the disk cache
-		if g.LazyDiskCache {
-			g.LazyDiskSendChan <- schema.LazyMessageQueueItem{
-				ID:               key,
-				Data:             value,
-				TransactionBatch: bnum,
-			}
-
-		} else {
-			err = g.DiskCache.Update(func(txn *badger.Txn) error {
-				return txn.Set(key, value)
-			})
-			if err != nil {
-				return err
-			}
-		}
+	var rbuf bytes.Buffer
+	enc := gob.NewEncoder(&rbuf)
+	err = enc.Encode(fsm.CommandPayload[d]{
+		Operation:     fsm.EnQueue,
+		Data:          obj,
+		LazyOperation: lazyDiskComit,
+	})
+	if err != nil {
+		return err
 	}
 
-	pq.EnQueue(obj)
+	future := g.Raft.Apply(rbuf.Bytes(), time.Duration(10)*time.Second)
+	resp := future.Response()
+	if resp == nil {
+		return future.Error()
+	}
+
+	r, ok := resp.(fsm.ApplyResponse[d])
+	if !ok {
+		return fmt.Errorf("Error converting response to ApplyResponse: %v", resp)
+	}
+
+	if r.Err != nil {
+		return fmt.Errorf("Failed to apply item to raft! ResponseError: %v", r.Err)
+	}
 
 	return nil
 }
 
+/*
 // reQueue adds an item to the GPQ with a specific key restored from the disk cache
 func (g *GPQ[d]) reQueue(data d, priorityBucket int64, escalate bool, escalationRate time.Duration, canTimeout bool, timeout time.Duration, key []byte) error {
 
@@ -266,88 +264,68 @@ func (g *GPQ[d]) reQueue(data d, priorityBucket int64, escalate bool, escalation
 
 	return nil
 }
+*/
 
 // DeQueue removes and returns the item with the highest priority from the GPQ.
 // It returns the priority of the item, the data associated with it,
 // and an error if the queue is empty or if any internal data structures are missing.
 func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 
-	// Return an error if there are no items in the queue
-	if atomic.LoadUint64(&g.NonEmptyBuckets.ObjectsInQueue) == 0 && atomic.LoadInt64(&g.NonEmptyBuckets.ActiveBuckets) == 0 {
-		return -1, data, errors.New("No items in any queue")
-	}
-
-	// Get the first item from the highest priority bucket
-	// If the bucket is empty, remove it from the non-empty buckets
-	// This structure allows for O(1) access to the highest priority item
-	priorityBucket, exists := g.NonEmptyBuckets.Peek()
-	if !exists {
-		return -1, data, errors.New("No item in queue bucket")
-	}
-
-	pq, _ := g.Buckets.Get(priorityBucket)
-
-	// Dequeue the item
-	batchNumber, key, p, item, err := pq.DeQueue()
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err = enc.Encode(fsm.CommandPayload[d]{
+		Operation: fsm.DeQueue,
+	})
 	if err != nil {
 		return -1, data, err
 	}
-	priority = p
 
-	if !g.DiskCacheEnabled {
-		data = item
-
-	} else {
-		if g.LazyDiskCache {
-			g.LazyDiskDeleteChan <- schema.LazyMessageQueueItem{
-				ID:               key,
-				Data:             nil,
-				TransactionBatch: batchNumber,
-			}
-		} else {
-			// Get the item from the disk cache
-			var value []byte
-			err = g.DiskCache.View(func(txn *badger.Txn) error {
-				item, err := txn.Get(key)
-				if err != nil {
-					return err
-				}
-				return item.Value(func(val []byte) error {
-					value = append([]byte{}, val...)
-					return nil
-				})
-			})
-			if err != nil {
-				return -1, data, err
-			}
-
-			var buf bytes.Buffer
-			buf.Write(value)
-			obj := schema.Item[d]{}
-			err = gob.NewDecoder(&buf).Decode(&obj)
-			if err != nil {
-				return -1, data, err
-			}
-			data = obj.Data
-
-			// Lazily delete the item from the disk cache
-			g.ActiveDBSessions.Add(1)
-			go func() {
-				defer g.ActiveDBSessions.Done()
-
-				// Delete the item from the disk cache
-				g.DiskCache.Update(func(txn *badger.Txn) error {
-					return txn.Delete(key)
-				})
-
-			}()
-		}
+	future := g.Raft.Apply(buf.Bytes(), time.Duration(10)*time.Second)
+	resp := future.Response()
+	if resp == nil {
+		return -1, data, future.Error()
+	}
+	r, ok := resp.(fsm.ApplyResponse[d])
+	if !ok {
+		return -1, data, fmt.Errorf("Error converting response to ApplyResponse: %v", resp)
 	}
 
-	return priority, data, nil
+	if r.Err != nil {
+		return -1, data, fmt.Errorf("Failed to apply item to raft! ResponseError: %v", r.Err)
+	}
+
+	return r.Priority, r.Data, nil
 
 }
 
+// Peek returns the item with the highest priority from the GPQ.
+// It returns the priority of the item, the data associated with it,
+// and an error if the queue is empty or if any internal data structures are missing.
+func (g *GPQ[d]) Peek() (data d, err error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err = enc.Encode(fsm.CommandPayload[d]{
+		Operation: fsm.Peek,
+	})
+	if err != nil {
+		return data, err
+	}
+
+	future := g.Raft.Apply(buf.Bytes(), time.Duration(10)*time.Second)
+
+	resp, ok := future.Response().(fsm.ApplyResponse[d])
+	if !ok {
+		return data, errors.New("Failed to apply item to raft")
+	}
+	if resp.Err != nil {
+		return data, resp.Err
+	}
+
+	return resp.Data, nil
+
+}
+
+/*
 // Prioritize is a method of the GPQ type that prioritizes items within a heap.
 // It iterates over each bucket in the GPQ, locks the corresponding mutex, and checks if there are items to prioritize.
 // If there are items, it calculates the number of durations that have passed since the last escalation and updates the priority accordingly.
@@ -422,180 +400,23 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 
 	return timedOutItems, escalatedItems, errs
 }
+*/
 
-// Peek returns the item with the highest priority from the GPQ.
-// It returns the priority of the item, the data associated with it,
-// and an error if the queue is empty or if any internal data structures are missing.
-func (g *GPQ[d]) Peek() (data d, err error) {
-
-	// Return an error if there are no items in the queue
-	if atomic.LoadUint64(&g.NonEmptyBuckets.ObjectsInQueue) == 0 && atomic.LoadInt64(&g.NonEmptyBuckets.ActiveBuckets) == 0 {
-		return data, errors.New("No items in any queue")
-	}
-
-	// Get the first item from the highest priority bucket
-	// If the bucket is empty, remove it from the non-empty buckets
-	// This structure allows for O(1) access to the highest priority item
-	priorityBucket, exists := g.NonEmptyBuckets.Peek()
-	if !exists {
-		return data, errors.New("No item in queue bucket")
-	}
-
-	pq, _ := g.Buckets.Get(priorityBucket)
-
-	// Dequeue the item
-	item, err := pq.Peek()
+// Close closes the GPQ and all associated data stores
+func (g *GPQ[d]) Close() error {
+	err := g.Raft.Shutdown().Error()
 	if err != nil {
-		return item, err
-	}
-
-	return item, nil
-
-}
-
-func (g *GPQ[d]) lazyDiskLoader() {
-	g.ActiveDBSessions.Add(1)
-	defer g.ActiveDBSessions.Done()
-
-	g.AllBatchesSynced.Add(1)
-	defer g.AllBatchesSynced.Done()
-
-	batch := make(map[uint64][]schema.LazyMessageQueueItem, 0)
-	ticker := time.NewTicker(250 * time.Millisecond)
-
-	for {
-		select {
-		case item, ok := <-g.LazyDiskSendChan:
-			if !ok {
-				// Channel is closed, process remaining batch and return
-				for k, v := range batch {
-					g.processBatch(v)
-					batch[k] = batch[k][:0]
-					g.SyncedBatches.Store(k, true)
-				}
-				return
-			}
-
-			batch[item.TransactionBatch] = append(batch[item.TransactionBatch], item)
-
-			if len(batch[item.TransactionBatch]) >= int(g.BatchSize) {
-				synced, ok := g.SyncedBatches.Load(item.TransactionBatch)
-				if ok && synced.(bool) == true {
-					g.processBatch(batch[item.TransactionBatch])
-					batch[item.TransactionBatch] = batch[item.TransactionBatch][:0]
-					g.SyncedBatches.Store(item.TransactionBatch, true)
-				}
-			}
-
-		case <-ticker.C:
-			for k, v := range batch {
-				if len(v) >= int(g.BatchSize) {
-					g.processBatch(v)
-					batch[k] = batch[k][:0]
-					g.SyncedBatches.Store(k, true)
-				}
-			}
-		}
-	}
-}
-
-func (g *GPQ[d]) lazyDiskDeleter() {
-	g.ActiveDBSessions.Add(1)
-	defer g.ActiveDBSessions.Done()
-
-	batch := make(map[uint64][]schema.LazyMessageQueueItem, 0)
-
-	for {
-		select {
-		case item, ok := <-g.LazyDiskDeleteChan:
-			if !ok {
-				g.AllBatchesSynced.Wait()
-				// Channel is closed, process remaining batch and return
-				for _, v := range batch {
-					g.deleteBatch(v)
-					batch[item.TransactionBatch] = batch[item.TransactionBatch][:0]
-					g.SyncedBatches.Delete(item.TransactionBatch)
-				}
-				return
-			}
-			// Add the item to the batch
-			batch[item.TransactionBatch] = append(batch[item.TransactionBatch], item)
-
-			// If the batch is full, process it and delete the items from the disk cache
-			if len(batch[item.TransactionBatch]) >= int(g.BatchSize) {
-				synced, ok := g.SyncedBatches.Load(item.TransactionBatch)
-				if ok && synced.(bool) == true {
-					g.deleteBatch(batch[item.TransactionBatch])
-					batch[item.TransactionBatch] = batch[item.TransactionBatch][:0]
-					g.SyncedBatches.Delete(item.TransactionBatch)
-				}
-			}
-		}
-	}
-}
-
-func (g *GPQ[d]) processBatch(batch []schema.LazyMessageQueueItem) error {
-	txn := g.DiskCache.NewTransaction(true) // Read-write transaction
-	defer txn.Discard()
-
-	for i := 0; i < len(batch); i++ {
-		entry := batch[i]
-		err := txn.Set(entry.ID, entry.Data)
-		if err == badger.ErrTxnTooBig {
-			// Commit the transaction and start a new one
-			if err := txn.Commit(); err != nil {
-				return err
-			}
-			txn = g.DiskCache.NewTransaction(true)
-			txn.Set(entry.ID, entry.Data)
-		} else if err != nil {
-			return err
-		}
-	}
-
-	// Commit the final transaction, if it has any pending writes
-	if err := txn.Commit(); err != nil {
 		return err
 	}
-	return nil
-}
-
-func (g *GPQ[d]) deleteBatch(batch []schema.LazyMessageQueueItem) error {
-	txn := g.DiskCache.NewTransaction(true) // Read-write transaction
-	defer txn.Discard()
-
-	for i := 0; i < len(batch); i++ {
-		entry := batch[i]
-		err := txn.Delete(entry.ID)
-		if err == badger.ErrTxnTooBig {
-			// Commit the transaction and start a new one
-			if err := txn.Commit(); err != nil {
-				return err
-			}
-			txn = g.DiskCache.NewTransaction(true)
-			txn.Delete(entry.ID)
-		} else if err != nil {
-			return err
-		}
-	}
-
-	// Commit the final transaction, if it has any pending writes
-	if err := txn.Commit(); err != nil {
+	err = g.StableStore.Close()
+	if err != nil {
 		return err
 	}
-	return nil
-}
-
-func (g *GPQ[d]) Close() {
-	close(g.LazyDiskSendChan)
-	close(g.LazyDiskDeleteChan)
-
-	// Wait for all db sessions to sync to disk
-	g.ActiveDBSessions.Wait()
-
-	// Sync the disk cache
-	if g.DiskCacheEnabled {
-		g.DiskCache.Sync()
-		g.DiskCache.Close()
+	err = g.Transport.Close()
+	if err != nil {
+		return err
 	}
+	g.FSM.Close()
+
+	return nil
 }

@@ -26,3 +26,21 @@ type LazyMessageQueueItem struct {
 	Data             []byte
 	TransactionBatch uint64
 }
+
+type GPQOptions struct {
+	NumberOfBuckets   int
+	DiskCache         bool
+	DiskCachePath     string
+	Compression       bool
+	LazyDiskCache     bool
+	LazyDiskBatchSize int
+
+	RaftPoolConnections int
+	RaftStableStorePath string
+	RaftSnapshotPath    string
+	RaftSnapshotRetain  int
+	RaftCacheSize       int
+	RaftPort            int
+	RaftBindAddress     string
+	RaftNodeID          string
+}

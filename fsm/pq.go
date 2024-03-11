@@ -1,4 +1,4 @@
-package gpq
+package fsm
 
 import (
 	"errors"

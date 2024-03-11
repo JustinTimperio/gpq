@@ -11,23 +11,39 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq"
+	"github.com/JustinTimperio/gpq/schema"
 	"github.com/dgraph-io/badger/v4"
 )
 
 func TestGPQ(t *testing.T) {
 
 	var (
-		total      int  = 1000000
-		print      bool = false
-		syncToDisk bool = true
-		lazy       bool = true
-		batchSize  int  = 1000
-		sent       uint64
-		timedOut   uint64
-		received   uint64
-		missed     int64
-		hits       int64
+		total    int  = 100000
+		print    bool = true
+		sent     uint64
+		timedOut uint64
+		received uint64
+		missed   int64
+		hits     int64
 	)
+
+	options := schema.GPQOptions{
+		NumberOfBuckets:   10,
+		DiskCache:         false,
+		DiskCachePath:     "/tmp/gpq/topic/cache",
+		Compression:       true,
+		LazyDiskCache:     true,
+		LazyDiskBatchSize: 1000,
+
+		RaftPoolConnections: 10,
+		RaftCacheSize:       1000,
+		RaftStableStorePath: "/tmp/gpq/topic/raft/stable",
+		RaftSnapshotPath:    "/tmp/gpq/topic/raft/snapshot",
+		RaftSnapshotRetain:  5,
+		RaftPort:            11000,
+		RaftBindAddress:     "127.0.0.1",
+		RaftNodeID:          "Test-Node-1",
+	}
 
 	// Create a pprof file
 	f, err := os.Create("profile.pprof")
@@ -68,23 +84,27 @@ func TestGPQ(t *testing.T) {
 		}
 	}()
 
-	queue, err := gpq.NewGPQ[int](10, syncToDisk, "/tmp/gpq/test", lazy, int64(batchSize))
+	queue, err := gpq.NewGPQ[int](options)
 	if err != nil {
 		log.Fatalln(err)
 	}
 	wg := &sync.WaitGroup{}
+	// Wait to become the leader
+	time.Sleep(5 * time.Second)
 
-	go func() {
-		for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received) < uint64(total) {
-			time.Sleep(500 * time.Millisecond)
-			to, es, err := queue.Prioritize()
-			if err != nil {
+	/*
+		go func() {
+			for queue.FSM.ObjectsInQueue() > 0 || atomic.LoadUint64(&received) < uint64(total) {
+				time.Sleep(500 * time.Millisecond)
+				to, es, err := queue.Prioritize()
+				if err != nil {
+				}
+				atomic.AddUint64(&timedOut, to)
+				log.Println("Prioritize Timed Out:", to, "Escalated:", es)
 			}
-			atomic.AddUint64(&timedOut, to)
-			log.Println("Prioritize Timed Out:", to, "Escalated:", es)
-		}
 
-	}()
+		}()
+	*/
 
 	timer := time.Now()
 	wg.Add(10)
@@ -101,6 +121,7 @@ func TestGPQ(t *testing.T) {
 					time.Duration(time.Second),
 					true,
 					time.Duration(time.Second*10),
+					true,
 				)
 				if err != nil {
 					log.Fatalln(err)
@@ -112,6 +133,7 @@ func TestGPQ(t *testing.T) {
 			}
 		}()
 	}
+	time.Sleep(10 * time.Second)
 
 	wg.Add(2)
 	for i := 0; i < 2; i++ {
@@ -120,7 +142,7 @@ func TestGPQ(t *testing.T) {
 
 			var lastPriority int64
 
-			for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
+			for queue.FSM.ObjectsInQueue() > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
 				timer := time.Now()
 				priority, item, err := queue.DeQueue()
 				if err != nil {
@@ -157,7 +179,7 @@ func TestGPQ(t *testing.T) {
 
 func TestNumberOfItems(t *testing.T) {
 	var total int
-	opts := badger.DefaultOptions("/tmp/gpq/test")
+	opts := badger.DefaultOptions("/tmp/gpq/topic/cache")
 	opts.Logger = nil
 	db, err := badger.Open(opts)
 	if err != nil {
