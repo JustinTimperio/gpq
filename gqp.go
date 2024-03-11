@@ -298,6 +298,7 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 		data = item
 
 	} else {
+		data = item
 		if g.LazyDiskCache {
 			g.LazyDiskDeleteChan <- schema.LazyMessageQueueItem{
 				ID:               key,
@@ -344,6 +345,7 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 		}
 	}
 
+	fmt.Println("DeQueue", priority, data)
 	return priority, data, nil
 
 }
