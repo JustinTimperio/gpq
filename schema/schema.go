@@ -19,10 +19,12 @@ type Item[d any] struct {
 	LastEscalated time.Time
 	Index         int
 	BatchNumber   uint64
+	WasRestored   bool
 }
 
 type LazyMessageQueueItem struct {
 	ID               []byte
 	Data             []byte
 	TransactionBatch uint64
+	WasRestored      bool
 }

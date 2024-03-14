@@ -83,7 +83,6 @@ func TestGPQ(t *testing.T) {
 			atomic.AddUint64(&timedOut, to)
 			log.Println("Prioritize Timed Out:", to, "Escalated:", es)
 		}
-
 	}()
 
 	timer := time.Now()
@@ -119,31 +118,32 @@ func TestGPQ(t *testing.T) {
 			defer wg.Done()
 
 			var lastPriority int64
-
-			for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
-				timer := time.Now()
-				priority, item, err := queue.DeQueue()
-				if err != nil {
-					if print {
-						log.Println("Hits", hits, "Misses", missed, "Sent", sent, "Received", missed+hits, err)
+			for retries := 0; retries < 50; retries++ {
+				for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
+					timer := time.Now()
+					priority, item, err := queue.DeQueue()
+					if err != nil {
+						if print {
+							log.Println("Hits", hits, "Misses", missed, "Sent", sent, "Received", missed+hits, err)
+						}
+						time.Sleep(10 * time.Millisecond)
+						lastPriority = 0
+						continue
 					}
-					time.Sleep(10 * time.Millisecond)
-					lastPriority = 0
-					continue
-				}
-				atomic.AddUint64(&received, 1)
-				if print {
-					log.Println("DeQueue", priority, received, item, time.Since(timer))
-				}
+					atomic.AddUint64(&received, 1)
+					if print {
+						log.Println("DeQueue", priority, received, item, time.Since(timer))
+					}
 
-				if lastPriority > priority {
-					missed++
-				} else {
-					hits++
+					if lastPriority > priority {
+						missed++
+					} else {
+						hits++
+					}
+					lastPriority = priority
 				}
-				lastPriority = priority
+				time.Sleep(100 * time.Millisecond)
 			}
-			time.Sleep(500 * time.Millisecond)
 		}()
 	}
 
@@ -170,6 +170,28 @@ func TestNumberOfItems(t *testing.T) {
 		it := txn.NewIterator(opts)
 		defer it.Close()
 		for it.Rewind(); it.Valid(); it.Next() {
+			val := it.Item()
+			val.Value(func(v []byte) error {
+
+				/*
+					// Decode the item
+					var buf bytes.Buffer
+					buf.Write(v)
+					obj := schema.Item[int]{}
+					err = gob.NewDecoder(&buf).Decode(&obj)
+					if err != nil {
+						t.Fatal(err)
+					}
+					jsonObj, err := json.Marshal(obj)
+					if err != nil {
+						t.Fatal(err)
+					}
+					fmt.Println(string(jsonObj))
+				*/
+
+				return nil
+			})
+
 			total++
 		}
 		return nil

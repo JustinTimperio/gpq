@@ -29,8 +29,8 @@ import (
 // use [heap.EnQueue] and [heap.DeQueue].
 type Heap[T any, S any] interface {
 	sort.Interface
-	EnQueue(x S)                                // add x as element Len()
-	DeQueue() (uint64, []byte, int64, T, error) // remove and return element Len() - 1.
+	EnQueue(x S)                                      // add x as element Len()
+	DeQueue() (bool, uint64, []byte, int64, T, error) // remove and return element Len() - 1.
 	NoLockDeQueue()
 }
 
@@ -56,9 +56,9 @@ func EnQueue[T any, S any](h Heap[T, S], x S) {
 // DeQueue removes and returns the minimum element (according to Less) from the heap.
 // The complexity is O(log n) where n = h.Len().
 // DeQueue is equivalent to [Remove](h, 0).
-func DeQueue[T any, S any](h Heap[T, S]) (batchNumber uint64, diskUUID []byte, priority int64, data T, err error) {
+func DeQueue[T any, S any](h Heap[T, S]) (wasRecovered bool, batchNumber uint64, diskUUID []byte, priority int64, data T, err error) {
 	if h.Len() == 0 {
-		return 0, nil, -1, data, errors.New("No items in the queue")
+		return false, 0, nil, -1, data, errors.New("No items in the queue")
 	}
 	n := h.Len() - 1
 	h.Swap(0, n)
