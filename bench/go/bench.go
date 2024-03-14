@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq"
+	"github.com/JustinTimperio/gpq/schema"
 )
 
 var (
@@ -25,7 +26,18 @@ var (
 
 func main() {
 
-	queue, err := gpq.NewGPQ[int](maxBuckets, syncToDisk, "/tmp/gpq/", lazySync, 1000)
+	opts := schema.GPQOptions{
+		NumberOfBatches:       10,
+		DiskCacheEnabled:      true,
+		DiskCachePath:         "/tmp/gpq/test",
+		DiskCacheCompression:  false,
+		DiskEncryptionEnabled: false,
+		DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
+		LazyDiskCacheEnabled:  true,
+		LazyDiskBatchSize:     1000,
+	}
+
+	_, queue, err := gpq.NewGPQ[int](opts)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -71,6 +83,8 @@ func main() {
 		}
 		lastPriority = priority
 	}
+
+	queue.Close()
 
 	log.Println("Sent", sent, "Received", received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
 

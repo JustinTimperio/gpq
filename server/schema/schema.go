@@ -31,6 +31,11 @@ type Settings struct {
 	LogPath        string `koanf:"gpq_log_path"`
 	STDOut         bool   `koanf:"gpq_stdout"`
 
+	// Topics
+	DiskEncryptionEnabled bool   `koanf:"gpq_disk_encryption_enabled"`
+	DiskEncryptionKey     string `koanf:"gpq_disk_encryption_key"`
+	DiskCacheCompression  bool   `koanf:"gpq_disk_cache_compression"`
+
 	// Auth
 	AuthTopics     bool `koanf:"gpq_auth_topics"`
 	AuthSettings   bool `koanf:"gpq_auth_settings"`

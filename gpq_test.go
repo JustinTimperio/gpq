@@ -1,6 +1,7 @@
 package gpq_test
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"runtime"
@@ -11,23 +12,32 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq"
+	"github.com/JustinTimperio/gpq/schema"
 	"github.com/dgraph-io/badger/v4"
 )
 
 func TestGPQ(t *testing.T) {
 
 	var (
-		total      int  = 1000000
-		print      bool = false
-		syncToDisk bool = true
-		lazy       bool = true
-		batchSize  int  = 1000
-		sent       uint64
-		timedOut   uint64
-		received   uint64
-		missed     int64
-		hits       int64
+		total    int  = 1000000
+		print    bool = false
+		sent     uint64
+		timedOut uint64
+		received uint64
+		missed   int64
+		hits     int64
 	)
+
+	opts := schema.GPQOptions{
+		NumberOfBatches:       10,
+		DiskCacheEnabled:      true,
+		DiskCachePath:         "/tmp/gpq/test",
+		DiskCacheCompression:  false,
+		DiskEncryptionEnabled: false,
+		DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
+		LazyDiskCacheEnabled:  true,
+		LazyDiskBatchSize:     1000,
+	}
 
 	// Create a pprof file
 	f, err := os.Create("profile.pprof")
@@ -68,7 +78,7 @@ func TestGPQ(t *testing.T) {
 		}
 	}()
 
-	queue, err := gpq.NewGPQ[int](10, syncToDisk, "/tmp/gpq/test", lazy, int64(batchSize))
+	requeued, queue, err := gpq.NewGPQ[int](opts)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -148,7 +158,16 @@ func TestGPQ(t *testing.T) {
 	}
 
 	wg.Wait()
-	log.Println("Sent", atomic.LoadUint64(&sent), "Received", atomic.LoadUint64(&received), "Timed Out", atomic.LoadUint64(&timedOut), "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
+	fmt.Println(
+		" Total:", total, "\n",
+		"Sent:", atomic.LoadUint64(&sent), "\n",
+		"Received:", atomic.LoadUint64(&received), "\n",
+		"Requeued:", requeued, "\n",
+		"Timed Out:", atomic.LoadUint64(&timedOut), "\n",
+		"Finished in:", time.Since(timer), "\n",
+		"Out Of Order:", missed, "\n",
+		"In Order:", hits,
+	)
 
 	// Wait for all db sessions to sync to disk
 	queue.Close()

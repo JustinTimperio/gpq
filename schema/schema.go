@@ -28,3 +28,14 @@ type LazyMessageQueueItem struct {
 	TransactionBatch uint64
 	WasRestored      bool
 }
+
+type GPQOptions struct {
+	NumberOfBatches       int
+	DiskCacheEnabled      bool
+	DiskCachePath         string
+	DiskCacheCompression  bool
+	LazyDiskCacheEnabled  bool
+	LazyDiskBatchSize     int
+	DiskEncryptionEnabled bool
+	DiskEncryptionKey     []byte
+}
