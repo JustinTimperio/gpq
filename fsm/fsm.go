@@ -32,7 +32,6 @@ type FSM[d any] struct {
 	nonEmptyBuckets         *BucketPriorityQueue
 	// Lazy disk settings
 	diskCache          bool
-	lazy               bool
 	lazyDiskSendChan   chan schema.LazyMessageQueueItem
 	lazyDiskDeleteChan chan schema.LazyMessageQueueItem
 	// Batch Utils
@@ -44,6 +43,13 @@ type FSM[d any] struct {
 	batchSize        uint64
 	// Active DB Sessions
 	activeDBSessions *sync.WaitGroup
+	// debug
+	sendBatchesProcessed    uint64
+	sendMessagesProcessed   uint64
+	deleteBatchesProcessed  uint64
+	deleteMessagesProcessed uint64
+	txnDeleteProcessed      uint64
+	txnSetProcessed         uint64
 }
 
 type CommandPayload[d any] struct {
@@ -74,12 +80,11 @@ func NewFSM[d any](options schema.GPQOptions) (*FSM[d], error) {
 	fsm := &FSM[d]{
 		db:                      db,
 		diskCache:               options.DiskCache,
-		lazy:                    options.LazyDiskCache,
 		lazyDiskSendChan:        make(chan schema.LazyMessageQueueItem),
 		lazyDiskDeleteChan:      make(chan schema.LazyMessageQueueItem),
 		allBatchesSynced:        &sync.WaitGroup{},
 		syncedBatches:           &sync.Map{},
-		batchNumber:             0,
+		batchNumber:             1,
 		batchMutex:              &sync.Mutex{},
 		batchSize:               uint64(options.LazyDiskBatchSize),
 		activeDBSessions:        &sync.WaitGroup{},
@@ -126,6 +131,21 @@ func (f *FSM[d]) Apply(log *raft.Log) interface{} {
 			pq, _ := f.buckets.Get(c.Data.Priority)
 
 			if f.diskCache {
+
+				// Lock and assign a global batch number
+				f.batchMutex.Lock()
+				bnum := f.batchNumber
+				f.batchCounter++
+				if f.batchCounter == f.batchSize {
+					f.batchCounter = 0
+					f.batchNumber++
+				}
+				f.syncedBatches.Store(f.batchNumber, false)
+				f.batchMutex.Unlock()
+
+				// Assign the batch number to the item
+				c.Data.BatchNumber = bnum
+
 				// Gob the data
 				var buf bytes.Buffer
 				encoder := gob.NewEncoder(&buf)
@@ -135,20 +155,21 @@ func (f *FSM[d]) Apply(log *raft.Log) interface{} {
 				}
 
 				// Write to Disk
-				if !c.LazyOperation {
+				if c.LazyOperation {
+					f.sendMessagesProcessed++
+					// Add the item to the lazy disk queue
+					f.lazyDiskSendChan <- schema.LazyMessageQueueItem{
+						ID:               c.Data.DiskUUID,
+						Data:             buf.Bytes(),
+						TransactionBatch: bnum,
+					}
+				} else {
 					// Write to Disk
 					err = f.db.Update(func(txn *badger.Txn) error {
 						return txn.Set(c.Data.DiskUUID, buf.Bytes())
 					})
 					if err != nil {
 						return ApplyResponse[d]{Success: false, Err: err}
-					}
-				} else {
-					// Add the item to the lazy disk queue
-					f.lazyDiskSendChan <- schema.LazyMessageQueueItem{
-						ID:               c.Data.DiskUUID,
-						Data:             buf.Bytes(),
-						TransactionBatch: f.batchNumber,
 					}
 				}
 			}
@@ -174,28 +195,36 @@ func (f *FSM[d]) Apply(log *raft.Log) interface{} {
 			// Dequeue the item
 			bnum, diskUUID, priority, item, err := pq.DeQueue()
 			if err != nil {
-				return ApplyResponse[d]{Success: true, Err: err}
+				return ApplyResponse[d]{Success: false, Err: err}
 			}
 
 			// Delete the item from the disk
 			if f.diskCache {
-				if !c.LazyOperation {
+				if c.LazyOperation {
+					f.deleteMessagesProcessed++
+					f.lazyDiskDeleteChan <- schema.LazyMessageQueueItem{
+						ID:               diskUUID,
+						Data:             nil,
+						TransactionBatch: bnum,
+					}
+				} else {
 					err = f.db.Update(func(txn *badger.Txn) error {
 						return txn.Delete(diskUUID)
 					})
 					if err != nil {
 						return ApplyResponse[d]{Success: false, Err: err}
 					}
-				} else {
-					f.lazyDiskDeleteChan <- schema.LazyMessageQueueItem{
-						ID:               diskUUID,
-						Data:             nil,
-						TransactionBatch: bnum,
-					}
 				}
 			}
 
-			return ApplyResponse[d]{Success: true, Data: item, Priority: priority}
+			response := ApplyResponse[d]{
+				Success:  true,
+				Err:      nil,
+				Data:     item,
+				Priority: priority,
+			}
+
+			return response
 
 		case Peek:
 			// Return an error if there are no items in the queue
@@ -303,6 +332,7 @@ func (f *FSM[d]) lazyDiskDeleter() {
 				}
 				return
 			}
+
 			// Add the item to the batch
 			batch[item.TransactionBatch] = append(batch[item.TransactionBatch], item)
 
@@ -312,7 +342,7 @@ func (f *FSM[d]) lazyDiskDeleter() {
 				if ok && synced.(bool) == true {
 					f.deleteBatch(batch[item.TransactionBatch])
 					batch[item.TransactionBatch] = batch[item.TransactionBatch][:0]
-					f.syncedBatches.Delete(item.TransactionBatch)
+					//f.syncedBatches.Delete(item.TransactionBatch)
 				}
 			}
 		}
@@ -323,7 +353,10 @@ func (f *FSM[d]) processBatch(batch []schema.LazyMessageQueueItem) error {
 	txn := f.db.NewTransaction(true) // Read-write transaction
 	defer txn.Discard()
 
+	f.sendBatchesProcessed++
+
 	for i := 0; i < len(batch); i++ {
+		f.txnSetProcessed++
 		entry := batch[i]
 		err := txn.Set(entry.ID, entry.Data)
 		if err == badger.ErrTxnTooBig {
@@ -349,7 +382,10 @@ func (f *FSM[d]) deleteBatch(batch []schema.LazyMessageQueueItem) error {
 	txn := f.db.NewTransaction(true) // Read-write transaction
 	defer txn.Discard()
 
+	f.deleteBatchesProcessed++
+
 	for i := 0; i < len(batch); i++ {
+		f.txnDeleteProcessed++
 		entry := batch[i]
 		err := txn.Delete(entry.ID)
 		if err == badger.ErrTxnTooBig {

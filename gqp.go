@@ -274,27 +274,24 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	err = enc.Encode(fsm.CommandPayload[d]{
-		Operation: fsm.DeQueue,
+		Operation:     fsm.DeQueue,
+		LazyOperation: true,
 	})
 	if err != nil {
 		return -1, data, err
 	}
 
 	future := g.Raft.Apply(buf.Bytes(), time.Duration(10)*time.Second)
-	resp := future.Response()
-	if resp == nil {
-		return -1, data, future.Error()
+	err = future.Error()
+	if err != nil {
+		return -1, data, err
 	}
+	resp := future.Response()
 	r, ok := resp.(fsm.ApplyResponse[d])
 	if !ok {
 		return -1, data, fmt.Errorf("Error converting response to ApplyResponse: %v", resp)
 	}
-
-	if r.Err != nil {
-		return -1, data, fmt.Errorf("Failed to apply item to raft! ResponseError: %v", r.Err)
-	}
-
-	return r.Priority, r.Data, nil
+	return r.Priority, r.Data, r.Err
 
 }
 
@@ -317,11 +314,8 @@ func (g *GPQ[d]) Peek() (data d, err error) {
 	if !ok {
 		return data, errors.New("Failed to apply item to raft")
 	}
-	if resp.Err != nil {
-		return data, resp.Err
-	}
 
-	return resp.Data, nil
+	return resp.Data, resp.Err
 
 }
 

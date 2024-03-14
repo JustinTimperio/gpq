@@ -32,7 +32,6 @@ type GPQOptions struct {
 	DiskCache         bool
 	DiskCachePath     string
 	Compression       bool
-	LazyDiskCache     bool
 	LazyDiskBatchSize int
 
 	RaftPoolConnections int

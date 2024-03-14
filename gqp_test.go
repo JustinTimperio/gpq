@@ -2,6 +2,7 @@ package gpq_test
 
 import (
 	"log"
+	"math/rand"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -18,13 +19,14 @@ import (
 func TestGPQ(t *testing.T) {
 
 	var (
-		total    int  = 100000
-		print    bool = true
-		sent     uint64
-		timedOut uint64
-		received uint64
-		missed   int64
-		hits     int64
+		total        int  = 1000000
+		print        bool = false
+		sent         uint64
+		timedOut     uint64
+		received     uint64
+		missed       int64
+		hits         int64
+		lastPriority int64
 	)
 
 	options := schema.GPQOptions{
@@ -32,7 +34,6 @@ func TestGPQ(t *testing.T) {
 		DiskCache:         false,
 		DiskCachePath:     "/tmp/gpq/topic/cache",
 		Compression:       true,
-		LazyDiskCache:     true,
 		LazyDiskBatchSize: 1000,
 
 		RaftPoolConnections: 10,
@@ -92,19 +93,21 @@ func TestGPQ(t *testing.T) {
 	// Wait to become the leader
 	time.Sleep(5 * time.Second)
 
-	/*
-		go func() {
-			for queue.FSM.ObjectsInQueue() > 0 || atomic.LoadUint64(&received) < uint64(total) {
+	go func() {
+		for queue.FSM.ObjectsInQueue() > 0 || atomic.LoadUint64(&received) < uint64(total) {
+			log.Println("Objects in queue", queue.FSM.ObjectsInQueue(), "Received", atomic.LoadUint64(&received), "Timed Out", atomic.LoadUint64(&timedOut))
+			time.Sleep(2 * time.Second)
+			/*
 				time.Sleep(500 * time.Millisecond)
 				to, es, err := queue.Prioritize()
 				if err != nil {
 				}
 				atomic.AddUint64(&timedOut, to)
 				log.Println("Prioritize Timed Out:", to, "Escalated:", es)
-			}
+			*/
+		}
 
-		}()
-	*/
+	}()
 
 	timer := time.Now()
 	wg.Add(10)
@@ -115,7 +118,7 @@ func TestGPQ(t *testing.T) {
 				p := i % 10
 				timer := time.Now()
 				err := queue.EnQueue(
-					i,
+					rand.Int(),
 					int64(p),
 					true,
 					time.Duration(time.Second),
@@ -133,14 +136,11 @@ func TestGPQ(t *testing.T) {
 			}
 		}()
 	}
-	time.Sleep(10 * time.Second)
 
-	wg.Add(2)
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
-
-			var lastPriority int64
 
 			for queue.FSM.ObjectsInQueue() > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
 				timer := time.Now()
@@ -159,11 +159,11 @@ func TestGPQ(t *testing.T) {
 				}
 
 				if lastPriority > priority {
-					missed++
+					atomic.AddInt64(&missed, 1)
 				} else {
-					hits++
+					atomic.AddInt64(&hits, 1)
 				}
-				lastPriority = priority
+				atomic.StoreInt64(&lastPriority, priority)
 			}
 			time.Sleep(500 * time.Millisecond)
 		}()
@@ -193,6 +193,28 @@ func TestNumberOfItems(t *testing.T) {
 		defer it.Close()
 		for it.Rewind(); it.Valid(); it.Next() {
 			total++
+			// Get item
+			item := it.Item()
+			item.Value(func(val []byte) error {
+				/*
+					// Decode the item
+					var buf bytes.Buffer
+					buf.Write(val)
+					obj := schema.Item[int]{}
+					err = gob.NewDecoder(&buf).Decode(&obj)
+					if err != nil {
+						return errors.New("Error decoding item from disk cache: " + err.Error())
+					}
+					json, err := json.Marshal(obj)
+					if err != nil {
+						return errors.New("Error marshalling item from disk cache: " + err.Error())
+					}
+					fmt.Println(string(json))
+				*/
+
+				return nil
+			})
+
 		}
 		return nil
 	})
