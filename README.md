@@ -74,7 +74,18 @@ import "github.com/JustinTimperio/gpq"
 Once you have an initialized queue you can easily submit items like the following:
 ```go
 
-queue := gpq.NewGPQ[int](10, false, "/path/for/disk/sync", true, 1000)
+opts := schema.GPQOptions{
+	NumberOfBatches:       10,
+	DiskCacheEnabled:      true,
+	DiskCachePath:         "/tmp/gpq/queue",
+	DiskCacheCompression:  true,
+	DiskEncryptionEnabled: true,
+	DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
+	LazyDiskCacheEnabled:  true,
+	LazyDiskBatchSize:     1000,
+}
+
+queue := gpq.NewGPQ[int](opts)
 
 var (
 	data int = 1

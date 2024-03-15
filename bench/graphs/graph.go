@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq"
+	"github.com/JustinTimperio/gpq/schema"
 )
 
 var (
@@ -88,8 +89,19 @@ func iter(prioritize bool) {
 
 func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, received *uint64, reprioritized *uint64, lazy bool) string {
 
+	opts := schema.GPQOptions{
+		NumberOfBatches:       nBuckets,
+		DiskCacheEnabled:      true,
+		DiskCachePath:         "/tmp/gpq/test",
+		DiskCacheCompression:  false,
+		DiskEncryptionEnabled: false,
+		DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
+		LazyDiskCacheEnabled:  lazy,
+		LazyDiskBatchSize:     1000,
+	}
+
 	// Create a new GPQ with a h-heap width of 100 using the TestStruct as the data type
-	queue, err := gpq.NewGPQ[int](nBuckets, false, "/tmp/gpq/", lazy, 1000)
+	_, queue, err := gpq.NewGPQ[int](opts)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -184,7 +196,7 @@ func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, r
 	log.Println("Sent", *sent, "Received", *received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits, "Reprioritized", *reprioritized)
 
 	// Wait for all db sessions to sync to disk
-	queue.ActiveDBSessions.Wait()
+	queue.Close()
 	return fmt.Sprintf("%d", time.Since(timer).Milliseconds())
 
 }

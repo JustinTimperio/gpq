@@ -14,6 +14,7 @@ import (
 
 	"github.com/cornelk/hashmap"
 	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v4/options"
 	"github.com/google/uuid"
 )
 
@@ -60,54 +61,60 @@ type GPQ[d any] struct {
 // The number of buckets is the number of priority levels you want to support
 // You must provide the number of buckets ahead of time and all priorities you submit
 // must be within the range of 0 to NumOfBuckets
-func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string, lazyDiskCache bool, batchSize int64) (*GPQ[d], error) {
+func NewGPQ[d any](Options schema.GPQOptions) (uint64, *GPQ[d], error) {
 	bp := NewBucketPriorityQueue()
 
 	gpq := &GPQ[d]{
-		BucketCount:             int64(NumOfBuckets),
+		BucketCount:             int64(Options.NumberOfBatches),
 		Buckets:                 hashmap.New[int64, *CorePriorityQueue[d]](),
 		NonEmptyBuckets:         bp,
-		DiskCacheEnabled:        diskCache,
+		DiskCacheEnabled:        Options.DiskCacheEnabled,
 		ActiveDBSessions:        &sync.WaitGroup{},
 		BucketPrioritizeLockMap: hashmap.New[int64, *sync.Mutex](),
-		LazyDiskCache:           lazyDiskCache,
+		LazyDiskCache:           Options.DiskCacheEnabled,
 		LazyDiskSendChan:        make(chan schema.LazyMessageQueueItem),
 		LazyDiskDeleteChan:      make(chan schema.LazyMessageQueueItem),
 		AllBatchesSynced:        &sync.WaitGroup{},
 		SyncedBatches:           &sync.Map{},
 		BatchNumber:             1,
 		BatchMutex:              &sync.Mutex{},
-		BatchSize:               batchSize,
+		BatchSize:               int64(Options.LazyDiskBatchSize),
 	}
 
-	for i := 0; i < NumOfBuckets; i++ {
+	for i := 0; i < Options.NumberOfBatches; i++ {
 		pq := NewCorePriorityQueue[d](bp)
 		gpq.Buckets.Set(int64(i), &pq)
 		gpq.BucketPrioritizeLockMap.Set(int64(i), &sync.Mutex{})
 	}
 
-	// Start the lazy disk loader
-	// This allows for items to be committed to the disk cache
-	// without waiting for a full disk sync and in batches
-	if lazyDiskCache {
-		if lazyDiskCache {
+	var reEnqueued uint64
+	if Options.DiskCacheEnabled {
+		if Options.DiskCachePath == "" {
+			return reEnqueued, gpq, errors.New("Disk cache path is required")
+		}
+
+		// Start the lazy disk loader and deleter
+		// This allows for items to be committed to the disk cache
+		// without waiting for a full disk sync and in batches
+		if Options.LazyDiskCacheEnabled {
 			go gpq.lazyDiskLoader()
 			go gpq.lazyDiskDeleter()
 		}
-	}
 
-	if diskCache {
-		if diskCachePath == "" {
-			return gpq, errors.New("Disk cache path is required")
-		}
-		opts := badger.DefaultOptions(diskCachePath)
+		opts := badger.DefaultOptions(Options.DiskCachePath)
 		opts.Logger = nil
+		if Options.DiskCacheCompression {
+			opts.Compression = options.ZSTD
+		}
+		if Options.DiskEncryptionEnabled {
+			opts.WithEncryptionKey(Options.DiskEncryptionKey)
+		}
+
 		db, err := badger.Open(opts)
 		if err != nil {
-			return nil, errors.New("Error opening disk cache: " + err.Error())
+			return reEnqueued, nil, errors.New("Error opening disk cache: " + err.Error())
 		}
 		gpq.DiskCache = db
-		var reEnqueued uint64
 
 		// Re-add items to the GPQ from the disk cache
 		err = gpq.DiskCache.View(func(txn *badger.Txn) error {
@@ -156,14 +163,14 @@ func NewGPQ[d any](NumOfBuckets int, diskCache bool, diskCachePath string, lazyD
 			return nil
 		})
 		if err != nil {
-			return nil, errors.New("Error reading from disk cache: " + err.Error())
+			return reEnqueued, nil, errors.New("Error reading from disk cache: " + err.Error())
 		}
 
 	} else {
 		gpq.DiskCache = nil
 	}
 
-	return gpq, nil
+	return reEnqueued, gpq, nil
 }
 
 // EnQueue adds an item to the GPQ

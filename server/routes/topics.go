@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq"
+	gpqscheama "github.com/JustinTimperio/gpq/schema"
 	"github.com/JustinTimperio/gpq/server/schema"
+	"github.com/JustinTimperio/gpq/server/settings"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/labstack/echo/v4"
 )
@@ -83,8 +85,19 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 		}
 	}
 
+	opts := gpqscheama.GPQOptions{
+		NumberOfBatches:       topic.Buckets,
+		DiskCacheEnabled:      topic.SyncToDisk,
+		DiskCachePath:         topic.DiskPath,
+		DiskCacheCompression:  settings.Settings.DiskCacheCompression,
+		DiskEncryptionEnabled: settings.Settings.DiskEncryptionEnabled,
+		DiskEncryptionKey:     []byte(settings.Settings.DiskEncryptionKey),
+		LazyDiskCacheEnabled:  topic.LazyDiskSync,
+		LazyDiskBatchSize:     int(topic.BatchSize),
+	}
+
 	// Create a new GPQ
-	queue, err := gpq.NewGPQ[[]byte](topic.Buckets, topic.SyncToDisk, topic.DiskPath, topic.LazyDiskSync, topic.BatchSize)
+	_, queue, err := gpq.NewGPQ[[]byte](opts)
 	if err != nil {
 		return echo.NewHTTPError(500, "Failed to create queue")
 	}
