@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"time"
 
+	cschema "github.com/JustinTimperio/gpq/schema"
 	"github.com/JustinTimperio/gpq/server/schema"
+
 	"github.com/labstack/echo/v4"
 	"github.com/parquet-go/parquet-go"
 )
@@ -115,8 +117,15 @@ func (rt RouteHandler) ParquetReceive(c echo.Context) error {
 			return echo.NewHTTPError(400, "Failed to encode message"+err.Error())
 		}
 
+		options := cschema.EnQueueOptions{
+			ShouldEscalate: shouldEscalate,
+			EscalationRate: escalateEvery,
+			CanTimeout:     canTimeout,
+			Timeout:        timeoutDuration,
+		}
+
 		// Add the record to the queue
-		queue.EnQueue(buf.Bytes(), int64(priority), shouldEscalate, escalateEvery, canTimeout, timeoutDuration)
+		queue.EnQueue(buf.Bytes(), int64(priority), options)
 	}
 
 	return nil

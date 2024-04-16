@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"time"
 
+	cschema "github.com/JustinTimperio/gpq/schema"
+
 	"github.com/labstack/echo/v4"
 )
 
@@ -78,8 +80,15 @@ func (rt RouteHandler) RawReceive(c echo.Context) error {
 		return echo.NewHTTPError(400, "Failed to read message")
 	}
 
+	options := cschema.EnQueueOptions{
+		ShouldEscalate: shouldEscalate,
+		EscalationRate: escalateEvery,
+		CanTimeout:     canTimeout,
+		Timeout:        timeoutDuration,
+	}
+
 	// Enqueue the Message
-	queue.EnQueue(message, int64(priority), shouldEscalate, escalateEvery, canTimeout, timeoutDuration)
+	queue.EnQueue(message, int64(priority), options)
 
 	return echo.NewHTTPError(200, "Message enqueued")
 }

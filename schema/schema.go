@@ -2,6 +2,8 @@ package schema
 
 import (
 	"time"
+
+	"github.com/dgraph-io/badger/v4"
 )
 
 type Item[d any] struct {
@@ -32,10 +34,19 @@ type LazyMessageQueueItem struct {
 type GPQOptions struct {
 	NumberOfBatches       int
 	DiskCacheEnabled      bool
+	DiskMaxDelay          time.Duration
 	DiskCachePath         string
 	DiskCacheCompression  bool
 	LazyDiskCacheEnabled  bool
 	LazyDiskBatchSize     int
 	DiskEncryptionEnabled bool
 	DiskEncryptionKey     []byte
+	Logger                badger.Logger
+}
+
+type EnQueueOptions struct {
+	ShouldEscalate bool
+	EscalationRate time.Duration
+	CanTimeout     bool
+	Timeout        time.Duration
 }
