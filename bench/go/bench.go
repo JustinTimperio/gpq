@@ -17,11 +17,17 @@ var (
 	print      bool = false
 	maxBuckets int  = 10
 
-	sent         uint64
-	received     uint64
-	missed       int64
-	hits         int64
-	lastPriority int64
+	sent                  uint64
+	received              uint64
+	missed                int64
+	hits                  int64
+	lastPriority          int64
+	defaultMessageOptions = schema.EnQueueOptions{
+		ShouldEscalate: true,
+		EscalationRate: time.Duration(time.Second),
+		CanTimeout:     true,
+		Timeout:        time.Duration(time.Second * 10),
+	}
 )
 
 func main() {
@@ -49,10 +55,7 @@ func main() {
 		err := queue.EnQueue(
 			i,
 			int64(p),
-			false,
-			time.Minute,
-			false,
-			10*time.Minute,
+			defaultMessageOptions,
 		)
 		if err != nil {
 			log.Fatalln(err)

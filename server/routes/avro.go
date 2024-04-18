@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"time"
 
+	cschema "github.com/JustinTimperio/gpq/schema"
 	"github.com/JustinTimperio/gpq/server/schema"
+
 	"github.com/labstack/echo/v4"
 	"github.com/linkedin/goavro/v2"
 )
@@ -106,7 +108,13 @@ func (rt RouteHandler) AvroReceive(c echo.Context) error {
 			return echo.NewHTTPError(400, "Failed to encode message")
 		}
 
-		queue.EnQueue(wrapper.Bytes(), int64(priority), shouldEscalate, escalateEvery, canTimeout, timeoutDuration)
+		options := cschema.EnQueueOptions{
+			ShouldEscalate: shouldEscalate,
+			EscalationRate: escalateEvery,
+			CanTimeout:     canTimeout,
+			Timeout:        timeoutDuration,
+		}
+		queue.EnQueue(wrapper.Bytes(), int64(priority), options)
 		good++
 	}
 

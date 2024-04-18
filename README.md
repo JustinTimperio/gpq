@@ -85,18 +85,22 @@ opts := schema.GPQOptions{
 	LazyDiskBatchSize:     1000,
 }
 
+defaultEnqueueOptions := schema.EnqueueOptions{
+  ShouldEscalate: true,
+  EscalationRate: time.Duration(time.Second),
+  CanTimeout:     true,
+  Timeout:        time.Duration(10 * time.Second),
+}
+
 queue := gpq.NewGPQ[int](opts)
 
 var (
 	data int = 1
 	priority int64 = 5 
-	shouldEscalate bool = true
-	escalationRate time.Duration = time.Duration(time.Second)
-	canTimeout bool = true
-	timeout time.Duration = time.Duration(10*time.Second)
+  options = defaultEnqueueOptions
 )
 
-queue.EnQueue(data, priority, shouldEscalate, escalationRate, canTimeout, timeout)
+queue.EnQueue(data, priority, options)
 
 ```
 

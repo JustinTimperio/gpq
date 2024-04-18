@@ -17,11 +17,17 @@ import (
 )
 
 var (
-	maxTotal    int  = 10000000
-	print       bool = false
-	retries     int  = 5
-	nMaxBuckets int  = 100
-	lazy        bool = true
+	maxTotal              int  = 10000000
+	print                 bool = false
+	retries               int  = 5
+	nMaxBuckets           int  = 100
+	lazy                  bool = true
+	defaultMessageOptions      = schema.EnQueueOptions{
+		ShouldEscalate: true,
+		EscalationRate: time.Duration(time.Second),
+		CanTimeout:     true,
+		Timeout:        time.Duration(time.Second * 10),
+	}
 )
 
 func main() {
@@ -138,10 +144,7 @@ func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, r
 				err := queue.EnQueue(
 					i,
 					int64(p),
-					true,
-					time.Duration(10*time.Millisecond),
-					true,
-					time.Duration(time.Second*10),
+					defaultMessageOptions,
 				)
 				if err != nil {
 					log.Fatalln(err)

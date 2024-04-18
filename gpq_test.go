@@ -19,13 +19,19 @@ import (
 func TestGPQ(t *testing.T) {
 
 	var (
-		total    int  = 1000000
-		print    bool = false
-		sent     uint64
-		timedOut uint64
-		received uint64
-		missed   int64
-		hits     int64
+		total                 int  = 10000000
+		print                 bool = false
+		sent                  uint64
+		timedOut              uint64
+		received              uint64
+		missed                int64
+		hits                  int64
+		defaultMessageOptions = schema.EnQueueOptions{
+			ShouldEscalate: true,
+			EscalationRate: time.Duration(time.Second),
+			CanTimeout:     true,
+			Timeout:        time.Duration(time.Second * 10),
+		}
 	)
 
 	opts := schema.GPQOptions{
@@ -106,10 +112,7 @@ func TestGPQ(t *testing.T) {
 				err := queue.EnQueue(
 					i,
 					int64(p),
-					true,
-					time.Duration(time.Second),
-					true,
-					time.Duration(time.Second*10),
+					defaultMessageOptions,
 				)
 				if err != nil {
 					log.Fatalln(err)
