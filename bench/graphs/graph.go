@@ -96,7 +96,7 @@ func iter(prioritize bool) {
 func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, received *uint64, reprioritized *uint64, lazy bool) string {
 
 	opts := schema.GPQOptions{
-		NumberOfBatches:       nBuckets,
+		NumberOfBuckets:       nBuckets,
 		DiskCacheEnabled:      true,
 		DiskCachePath:         "/tmp/gpq/test",
 		DiskCacheCompression:  false,

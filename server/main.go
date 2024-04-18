@@ -288,7 +288,7 @@ func rebuildFromDB(gpqs *routes.RouteHandler) {
 				}
 
 				opts := gpqschema.GPQOptions{
-					NumberOfBatches:       topic.Buckets,
+					NumberOfBuckets:       topic.Buckets,
 					DiskCacheEnabled:      topic.SyncToDisk,
 					DiskCachePath:         topic.DiskPath,
 					DiskCacheCompression:  settings.Settings.DiskCacheCompression,

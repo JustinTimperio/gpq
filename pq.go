@@ -16,6 +16,7 @@ type CorePriorityQueue[T any] struct {
 	bpq   *BucketPriorityQueue
 }
 
+// NewCorePriorityQueue creates a new CorePriorityQueue
 func NewCorePriorityQueue[T any](bpq *BucketPriorityQueue) CorePriorityQueue[T] {
 	return CorePriorityQueue[T]{
 		items: make([]*schema.Item[T], 0),
@@ -85,6 +86,7 @@ func (pq *CorePriorityQueue[T]) DeQueue() (wasRecoverd bool, batchNumber uint64,
 	return item.WasRestored, item.BatchNumber, item.DiskUUID, item.Priority, item.Data, nil
 }
 
+// Peek returns the first item in the heap without removing it
 func (pq CorePriorityQueue[T]) Peek() (data T, err error) {
 	pq.mutex.Lock()
 	defer pq.mutex.Unlock()
@@ -94,6 +96,7 @@ func (pq CorePriorityQueue[T]) Peek() (data T, err error) {
 	return pq.items[0].Data, nil
 }
 
+// Exposes the raw pointers to the items in the queue so that reprioritization can be done
 func (pq CorePriorityQueue[T]) ReadPointers() []*schema.Item[T] {
 	return pq.items
 }
@@ -106,12 +109,15 @@ func (pq *CorePriorityQueue[T]) UpdatePriority(item *schema.Item[T], priority in
 	gheap.Prioritize[T](pq, item.Index)
 }
 
+// Remove removes an item from the queue
 func (pq *CorePriorityQueue[T]) Remove(item *schema.Item[T]) {
 	pq.mutex.Lock()
 	defer pq.mutex.Unlock()
 	gheap.Remove[T](pq, item.Index)
 }
 
+// NoLockDeQueue removes the first item from the heap without locking the queue
+// This is used for nested calls to avoid deadlocks
 func (pq *CorePriorityQueue[T]) NoLockDeQueue() {
 	old := pq.items
 	n := len(old)
