@@ -6,6 +6,8 @@ import (
 	"github.com/dgraph-io/badger/v4"
 )
 
+// Item is used to store items in the GPQ
+// Internal use only
 type Item[d any] struct {
 	// User
 	Priority       int64
@@ -24,6 +26,8 @@ type Item[d any] struct {
 	WasRestored   bool
 }
 
+// LazyMessageQueueItem is used to store items in the lazy disk cache
+// Internal use only
 type LazyMessageQueueItem struct {
 	ID               []byte
 	Data             []byte
@@ -31,19 +35,34 @@ type LazyMessageQueueItem struct {
 	WasRestored      bool
 }
 
+// GPQOptions is used to configure the GPQ
 type GPQOptions struct {
-	NumberOfBatches       int
-	DiskCacheEnabled      bool
-	DiskMaxDelay          time.Duration
-	DiskCachePath         string
-	DiskCacheCompression  bool
-	LazyDiskCacheEnabled  bool
-	LazyDiskBatchSize     int
+	// Logger provides a custom logger interface
+	Logger badger.Logger
+	// Number of buckets to create
+	NumberOfBuckets int
+
+	// DiskCacheEnabled is used to enable or disable the disk cache
+	DiskCacheEnabled bool
+	// DiskMaxDelay is the maximum delay to wait before writing to disk
+	DiskMaxDelay time.Duration
+	// DiskCachePath is the local path to the disk cache
+	DiskCachePath string
+	// DiskCacheCompression is used to enable or disable zstd compression
+	DiskCacheCompression bool
+
+	// LazyDiskCacheEnabled is used to enable or disable the lazy disk cache
+	LazyDiskCacheEnabled bool
+	// LazyDiskBatchSize is the number of items to write to disk at once
+	LazyDiskBatchSize int
+
+	// DiskEncryptionEnabled is used to enable or disable disk encryption
 	DiskEncryptionEnabled bool
-	DiskEncryptionKey     []byte
-	Logger                badger.Logger
+	// DiskEncryptionKey is the key used to encrypt the disk cache
+	DiskEncryptionKey []byte
 }
 
+// EnQueueOptions is used to configure the EnQueue method
 type EnQueueOptions struct {
 	ShouldEscalate bool
 	EscalationRate time.Duration

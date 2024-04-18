@@ -64,7 +64,7 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint64, *GPQ[d], error) {
 	bp := NewBucketPriorityQueue()
 
 	gpq := &GPQ[d]{
-		BucketCount:     int64(Options.NumberOfBatches),
+		BucketCount:     int64(Options.NumberOfBuckets),
 		NonEmptyBuckets: bp,
 
 		buckets:                 hashmap.New[int64, *CorePriorityQueue[d]](),
@@ -80,7 +80,7 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint64, *GPQ[d], error) {
 		batchSize:               int64(Options.LazyDiskBatchSize),
 	}
 
-	for i := 0; i < Options.NumberOfBatches; i++ {
+	for i := 0; i < Options.NumberOfBuckets; i++ {
 		pq := NewCorePriorityQueue[d](bp)
 		gpq.buckets.Set(int64(i), &pq)
 		gpq.bucketPrioritizeLockMap.Set(int64(i), &sync.Mutex{})
@@ -285,33 +285,28 @@ func (g *GPQ[d]) reQueue(data d, priorityBucket int64, escalate bool, escalation
 // and an error if the queue is empty or if any internal data structures are missing.
 func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 
-	// Return an error if there are no items in the queue
+	// Return an error if there are no items in any bucket
 	if atomic.LoadUint64(&g.NonEmptyBuckets.ObjectsInQueue) == 0 && atomic.LoadInt64(&g.NonEmptyBuckets.ActiveBuckets) == 0 {
 		return -1, data, errors.New("No items in any queue")
 	}
 
-	// Get the first item from the highest priority bucket
-	// If the bucket is empty, remove it from the non-empty buckets
-	// This structure allows for O(1) access to the highest priority item
+	// Get the first non-empty bucket with the highest priority
 	priorityBucket, exists := g.NonEmptyBuckets.Peek()
 	if !exists {
 		return -1, data, errors.New("No item in queue bucket")
 	}
-
 	pq, _ := g.buckets.Get(priorityBucket)
 
-	// Dequeue the item
+	// Dequeue the item from the priority queue
 	wasRestored, batchNumber, key, p, item, err := pq.DeQueue()
 	if err != nil {
 		return -1, data, err
 	}
 	priority = p
+	data = item
 
-	if !g.diskCacheEnabled {
-		data = item
+	if g.diskCacheEnabled {
 
-	} else {
-		data = item
 		if g.lazyDiskCache {
 			g.lazyDiskDeleteChan <- schema.LazyMessageQueueItem{
 				ID:               key,
@@ -345,17 +340,10 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 			}
 			data = obj.Data
 
-			// Lazily delete the item from the disk cache
-			g.activeDBSessions.Add(1)
-			go func() {
-				defer g.activeDBSessions.Done()
-
-				// Delete the item from the disk cache
-				g.diskCache.Update(func(txn *badger.Txn) error {
-					return txn.Delete(key)
-				})
-
-			}()
+			// Delete the item from the disk cache
+			g.diskCache.Update(func(txn *badger.Txn) error {
+				return txn.Delete(key)
+			})
 		}
 	}
 
@@ -366,8 +354,7 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 // Prioritize is a method of the GPQ type that prioritizes items within a heap.
 // It iterates over each bucket in the GPQ, locks the corresponding mutex, and checks if there are items to prioritize.
 // If there are items, it calculates the number of durations that have passed since the last escalation and updates the priority accordingly.
-// The method uses goroutines to process each bucket concurrently, improving performance.
-// It returns an error if any of the required data structures are missing or if there are no items to prioritize.
+// It returns an array of errors if any of the required data structures are missing or if there are no items to prioritize.
 func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs []error) {
 
 	for bucketID := 0; bucketID < int(g.BucketCount); bucketID++ {
@@ -386,6 +373,8 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 		evalTime := time.Now()
 		for _, pointer := range pointers {
 
+			// The pointer may be nil if the item was dequeued faster than the prioritize function could run
+			// over all the items in the bucket. This is not an error, so we continue to the next item.
 			if pointer == nil {
 				continue
 			}
@@ -394,21 +383,26 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 			if pointer.CanTimeout {
 				duration := int(math.Abs(float64(pointer.SubmittedAt.Sub(evalTime).Milliseconds())))
 				if duration > int(pointer.Timeout.Milliseconds()) {
-
-					// Remove the item from the priority queue
 					pq.Remove(pointer)
 					atomic.AddUint64(&timedOutItems, 1)
-
-					// Remove the item from the disk cache
 					if g.diskCacheEnabled {
-						g.activeDBSessions.Add(1)
-						go func() {
-							defer g.activeDBSessions.Done()
+						if g.lazyDiskCache {
+							// Send the item to the lazy disk cache deleter
+							g.lazyDiskDeleteChan <- schema.LazyMessageQueueItem{
+								ID:               pointer.DiskUUID,
+								Data:             nil,
+								TransactionBatch: pointer.BatchNumber,
+								WasRestored:      pointer.WasRestored,
+							}
+
+						} else {
+							// Delete the item from the disk cache
 							g.diskCache.Update(func(txn *badger.Txn) error {
 								return txn.Delete(pointer.DiskUUID)
 							})
-						}()
+						}
 
+						// Continue to the next item
 						continue
 					}
 				}
@@ -416,13 +410,15 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 
 			// Escalate the priority if the item hasn't timed out and can escalate
 			if pointer.ShouldEscalate {
+
 				// Calculate the number of durations that fit between evalTime and pointer.SubmittedAt
-				duration := int(math.Abs(float64(pointer.LastEscalated.Sub(evalTime).Milliseconds())))
+				duration := int(pointer.LastEscalated.Sub(evalTime).Milliseconds())
 				numDurations := duration / int(pointer.EscalationRate.Milliseconds())
 
 				// If the number of durations is greater than 0, escalate the priority
 				if numDurations > 0 {
 					pointer.Priority = pointer.Priority - int64(numDurations)
+					// We don't want to escalate past the highest priority
 					if pointer.Priority < 0 {
 						pointer.Priority = 0
 					}
@@ -431,6 +427,7 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 					atomic.AddUint64(&escalatedItems, 1)
 				}
 			}
+
 		}
 		mutex.Unlock()
 	}
@@ -439,8 +436,7 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 }
 
 // Peek returns the item with the highest priority from the GPQ.
-// It returns the priority of the item, the data associated with it,
-// and an error if the queue is empty or if any internal data structures are missing.
+// It returns the data associated with the item and an error if the queue is empty.
 func (g *GPQ[d]) Peek() (data d, err error) {
 
 	// Return an error if there are no items in the queue
@@ -466,6 +462,21 @@ func (g *GPQ[d]) Peek() (data d, err error) {
 
 	return item, nil
 
+}
+
+// Close closes the GPQ and the disk cache
+func (g *GPQ[d]) Close() {
+	close(g.lazyDiskSendChan)
+	close(g.lazyDiskDeleteChan)
+
+	// Wait for all db sessions to sync to disk
+	g.activeDBSessions.Wait()
+
+	// Sync the disk cache
+	if g.diskCacheEnabled {
+		g.diskCache.Sync()
+		g.diskCache.Close()
+	}
 }
 
 func (g *GPQ[d]) lazyDiskLoader(maxDelay time.Duration) {
@@ -613,18 +624,4 @@ func (g *GPQ[d]) deleteBatch(batch []schema.LazyMessageQueueItem) error {
 		return err
 	}
 	return nil
-}
-
-func (g *GPQ[d]) Close() {
-	close(g.lazyDiskSendChan)
-	close(g.lazyDiskDeleteChan)
-
-	// Wait for all db sessions to sync to disk
-	g.activeDBSessions.Wait()
-
-	// Sync the disk cache
-	if g.diskCacheEnabled {
-		g.diskCache.Sync()
-		g.diskCache.Close()
-	}
 }

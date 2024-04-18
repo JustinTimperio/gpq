@@ -33,7 +33,7 @@ var (
 func main() {
 
 	opts := schema.GPQOptions{
-		NumberOfBatches:       10,
+		NumberOfBuckets:       10,
 		DiskCacheEnabled:      true,
 		DiskCachePath:         "/tmp/gpq/test",
 		DiskCacheCompression:  false,

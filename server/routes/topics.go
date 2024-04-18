@@ -86,7 +86,7 @@ func (rt *RouteHandler) AddTopic(c echo.Context) error {
 	}
 
 	opts := gpqscheama.GPQOptions{
-		NumberOfBatches:       topic.Buckets,
+		NumberOfBuckets:       topic.Buckets,
 		DiskCacheEnabled:      topic.SyncToDisk,
 		DiskCachePath:         topic.DiskPath,
 		DiskCacheCompression:  settings.Settings.DiskCacheCompression,
