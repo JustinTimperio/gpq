@@ -10,7 +10,7 @@ fn main() {
     let mut received = 0;
 
     // Push 10 million integers onto the heap
-    for i in 0..10_000_000 {
+    for _ in 0..10_000_000 {
         let mut rng = rand::thread_rng();
         let p = rng.gen_range(1..101);
         heap.push(p);

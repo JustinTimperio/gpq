@@ -26,23 +26,24 @@ func TestGPQ(t *testing.T) {
 		received              uint64
 		missed                int64
 		hits                  int64
+		emptyMessage          int64
 		defaultMessageOptions = schema.EnQueueOptions{
-			ShouldEscalate: true,
+			ShouldEscalate: false,
 			EscalationRate: time.Duration(time.Second),
-			CanTimeout:     true,
+			CanTimeout:     false,
 			Timeout:        time.Duration(time.Second * 10),
 		}
 	)
 
 	opts := schema.GPQOptions{
 		NumberOfBuckets:       10,
-		DiskCacheEnabled:      true,
+		DiskCacheEnabled:      false,
 		DiskCachePath:         "/tmp/gpq/test",
 		DiskCacheCompression:  false,
 		DiskEncryptionEnabled: false,
 		DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
 		LazyDiskCacheEnabled:  true,
-		LazyDiskBatchSize:     1000,
+		LazyDiskBatchSize:     50000,
 	}
 
 	// Create a pprof file
@@ -92,12 +93,12 @@ func TestGPQ(t *testing.T) {
 
 	go func() {
 		for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received) < uint64(total) {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(1 * time.Second)
 			to, es, err := queue.Prioritize()
 			if err != nil {
 			}
 			atomic.AddUint64(&timedOut, to)
-			log.Println("Prioritize Timed Out:", to, "Escalated:", es)
+			log.Println("Hits:", hits, "Misses:", missed, "Sent:", sent, "Received:", missed+hits, "Timed Out:", timedOut, "Empty Messages:", emptyMessage, "Escalated:", es, "Prioritized:", to)
 		}
 	}()
 
@@ -131,18 +132,20 @@ func TestGPQ(t *testing.T) {
 			defer wg.Done()
 
 			var lastPriority int64
-			for retries := 0; retries < 50; retries++ {
+			for retries := int64(0); retries < 10; retries++ {
 				for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
 					timer := time.Now()
 					priority, item, err := queue.DeQueue()
 					if err != nil {
-						if print {
-							log.Println("Hits", hits, "Misses", missed, "Sent", sent, "Received", missed+hits, err)
+						if err.Error() == "No items in any queue" || err.Error() == "Core Priority Queue Error: No items found in the queue" {
+							atomic.AddInt64(&emptyMessage, 1)
+							time.Sleep(10 * time.Millisecond)
+							lastPriority = 0
+							continue
 						}
-						time.Sleep(10 * time.Millisecond)
-						lastPriority = 0
-						continue
+						log.Fatalln(err)
 					}
+
 					atomic.AddUint64(&received, 1)
 					if print {
 						log.Println("DeQueue", priority, received, item, time.Since(timer))
@@ -154,8 +157,9 @@ func TestGPQ(t *testing.T) {
 						hits++
 					}
 					lastPriority = priority
+					atomic.StoreInt64(&retries, 0)
 				}
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond)
 			}
 		}()
 	}

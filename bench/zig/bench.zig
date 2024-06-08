@@ -22,28 +22,31 @@ pub fn main() !void {
     // Create Random Number Generator
     var prng = std.rand.DefaultPrng.init(blk: {
         var seed: u64 = undefined;
-        try std.os.getrandom(std.mem.asBytes(&seed));
+        try std.posix.getrandom(std.mem.asBytes(&seed));
         break :blk seed;
     });
     const rand = prng.random();
 
-    // Push 10 million integers onto the priority queue
     const start = try Time.Instant.now();
+
+    // Push 10 million integers onto the priority queue
+    const istart = try Time.Instant.now();
     var i: i32 = 0;
     while (i < 10000000) : (i += 1) {
         const p = @as(i32, @intCast(rand.intRangeAtMost(i32, 0, 100))); // get a random number between 0 and 100
         try pq.add(p);
     }
-    const end = try Time.Instant.now();
-    const diff_insert = Time.Instant.since(end, start);
+    const iend = try Time.Instant.now();
+    const diff_insert = Time.Instant.since(iend, istart);
 
     // Pop 10 million integers from the priority queue
-    const mid = try Time.Instant.now();
+    const rstart = try Time.Instant.now();
     while (pq.count() > 0) {
         _ = pq.remove();
     }
+    const rend = try Time.Instant.now();
     const finish = try Time.Instant.now();
-    const diff_remove = Time.Instant.since(finish, mid);
+    const diff_remove = Time.Instant.since(rend, rstart);
     const diff_total = Time.Instant.since(finish, start);
 
     const diff_insert_seconds = @as(f64, @floatFromInt(diff_insert)) / 1_000_000_000.0;

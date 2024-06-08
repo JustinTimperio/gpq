@@ -34,26 +34,26 @@ func NewBucketPriorityQueue() *BucketPriorityQueue {
 	}
 }
 
-func (pq *BucketPriorityQueue) Len() *int64 {
-	return &pq.ActiveBuckets
+func (bpq *BucketPriorityQueue) Len() *int64 {
+	return &bpq.ActiveBuckets
 }
 
-func (pq *BucketPriorityQueue) Peek() (bucketID int64, exists bool) {
-	pq.mutex.Lock()
-	defer pq.mutex.Unlock()
+func (bpq *BucketPriorityQueue) Peek() (bucketID int64, exists bool) {
+	bpq.mutex.Lock()
+	defer bpq.mutex.Unlock()
 
-	if pq.First == nil {
+	if bpq.First == nil {
 		return 0, false
 	}
-	return pq.First.BucketID, true
+	return bpq.First.BucketID, true
 }
 
-func (pq *BucketPriorityQueue) Add(bucketID int64) {
-	pq.mutex.Lock()
-	defer pq.mutex.Unlock()
+func (bpq *BucketPriorityQueue) Add(bucketID int64) {
+	bpq.mutex.Lock()
+	defer bpq.mutex.Unlock()
 
 	// If the bucket already exists, return
-	if _, exists := pq.BucketIDs[bucketID]; exists {
+	if _, exists := bpq.BucketIDs[bucketID]; exists {
 		return
 	}
 
@@ -61,25 +61,25 @@ func (pq *BucketPriorityQueue) Add(bucketID int64) {
 	newBucket := &Bucket{BucketID: bucketID}
 
 	// If the queue is empty, set the new bucket as the first and last
-	if pq.First == nil {
-		pq.First = newBucket
-		pq.Last = newBucket
+	if bpq.First == nil {
+		bpq.First = newBucket
+		bpq.Last = newBucket
 
 	} else {
 		// Find the correct position to insert the new bucket
-		current := pq.First
+		current := bpq.First
 		for current != nil && current.BucketID < bucketID {
 			current = current.Next
 		}
 
-		if current == pq.First { // Insert the new bucket at the beginning
-			newBucket.Next = pq.First
-			pq.First.Prev = newBucket
-			pq.First = newBucket
+		if current == bpq.First { // Insert the new bucket at the beginning
+			newBucket.Next = bpq.First
+			bpq.First.Prev = newBucket
+			bpq.First = newBucket
 		} else if current == nil { // Insert the new bucket at the end
-			newBucket.Prev = pq.Last
-			pq.Last.Next = newBucket
-			pq.Last = newBucket
+			newBucket.Prev = bpq.Last
+			bpq.Last.Next = newBucket
+			bpq.Last = newBucket
 		} else { // Insert the new bucket in the middle
 			newBucket.Prev = current.Prev
 			newBucket.Next = current
@@ -88,16 +88,16 @@ func (pq *BucketPriorityQueue) Add(bucketID int64) {
 		}
 	}
 
-	pq.BucketIDs[bucketID] = newBucket
-	atomic.AddInt64(&pq.ActiveBuckets, 1)
+	bpq.BucketIDs[bucketID] = newBucket
+	atomic.AddInt64(&bpq.ActiveBuckets, 1)
 }
 
-func (pq *BucketPriorityQueue) Remove(bucketID int64) {
-	pq.mutex.Lock()
-	defer pq.mutex.Unlock()
+func (bpq *BucketPriorityQueue) Remove(bucketID int64) {
+	bpq.mutex.Lock()
+	defer bpq.mutex.Unlock()
 
 	// If the bucket does not exist, return
-	bucket, exists := pq.BucketIDs[bucketID]
+	bucket, exists := bpq.BucketIDs[bucketID]
 	if !exists {
 		return
 	}
@@ -106,24 +106,16 @@ func (pq *BucketPriorityQueue) Remove(bucketID int64) {
 	if bucket.Prev != nil {
 		bucket.Prev.Next = bucket.Next
 	} else {
-		pq.First = bucket.Next
+		bpq.First = bucket.Next
 	}
 	if bucket.Next != nil {
 		bucket.Next.Prev = bucket.Prev
 	} else {
-		pq.Last = bucket.Prev
+		bpq.Last = bucket.Prev
 	}
 
 	// Remove the bucket from the map and decrement the active bucket count
-	delete(pq.BucketIDs, bucketID)
-	atomic.AddInt64(&pq.ActiveBuckets, -1)
-	atomic.StoreInt64(&pq.LastRemoved, bucketID)
-}
-
-func (pq *BucketPriorityQueue) Contains(bucketID int64) bool {
-	pq.mutex.Lock()
-	defer pq.mutex.Unlock()
-
-	_, exists := pq.BucketIDs[bucketID]
-	return exists
+	delete(bpq.BucketIDs, bucketID)
+	atomic.AddInt64(&bpq.ActiveBuckets, -1)
+	atomic.StoreInt64(&bpq.LastRemoved, bucketID)
 }

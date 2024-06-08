@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	_ "net/http/pprof"
@@ -34,7 +35,7 @@ func main() {
 
 	opts := schema.GPQOptions{
 		NumberOfBuckets:       10,
-		DiskCacheEnabled:      true,
+		DiskCacheEnabled:      false,
 		DiskCachePath:         "/tmp/gpq/test",
 		DiskCacheCompression:  false,
 		DiskEncryptionEnabled: false,
@@ -65,7 +66,9 @@ func main() {
 		}
 		sent++
 	}
+	sendTime := time.Since(timer)
 
+	timer2 := time.Now()
 	for total > int(received) {
 		timer := time.Now()
 		priority, item, err := queue.DeQueue()
@@ -86,9 +89,12 @@ func main() {
 		}
 		lastPriority = priority
 	}
+	receiveTime := time.Since(timer2)
 
 	queue.Close()
 
-	log.Println("Sent", sent, "Received", received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits)
+	fmt.Println("Time to send:", sendTime)
+	fmt.Println("Time to remove:", receiveTime)
+	fmt.Println("Total time:", time.Since(timer))
 
 }
