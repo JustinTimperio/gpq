@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/JustinTimperio/gpq/ftime"
 	"github.com/JustinTimperio/gpq/schema"
 
 	"github.com/cornelk/hashmap"
@@ -196,8 +197,8 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, options schema.EnQueueOpt
 		EscalationRate: options.EscalationRate,
 		CanTimeout:     options.CanTimeout,
 		Timeout:        options.Timeout,
-		SubmittedAt:    time.Now(),
-		LastEscalated:  time.Now(),
+		SubmittedAt:    ftime.Now(),
+		LastEscalated:  ftime.Now(),
 	}
 
 	pq, _ := g.buckets.Get(priorityBucket)
@@ -212,16 +213,18 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, options schema.EnQueueOpt
 
 		obj.DiskUUID = key
 
-		// Set the batch number for the item
+		// We check if the batch number is divisible by the batch size
+		// If it is, we increment the batch number
 		var bnum uint64
 		if atomic.AddUint64(&g.batchCounter, 1)%uint64(g.batchSize) == 0 {
 			bnum = atomic.AddUint64(&g.batchNumber, 1)
+			// Otherwise, we use the current batch number
 		} else {
 			bnum = atomic.LoadUint64(&g.batchNumber)
 		}
 		g.syncedBatches.Store(g.batchNumber, false)
 
-		// Encode the item
+		// We convert the item into a decodable byte slice
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
 		err = enc.Encode(obj)
@@ -230,15 +233,15 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, options schema.EnQueueOpt
 		}
 		value := buf.Bytes()
 
-		// Send the item to the disk cache
+		// If lazy disk cache is enabled, schedule the item for writing
 		if g.lazyDiskCache {
 			g.lazyDiskSendChan <- schema.LazyMessageQueueItem{
 				ID:               key,
 				Data:             value,
 				TransactionBatch: bnum,
 			}
-
 		} else {
+			// If the lazy disk cache is not enabled, write the item to the disk cache synchronously
 			err = g.diskCache.Update(func(txn *badger.Txn) error {
 				return txn.Set(key, value)
 			})
@@ -248,12 +251,15 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, options schema.EnQueueOpt
 		}
 	}
 
+	// Enqueue the item
 	pq.EnQueue(obj)
 
 	return nil
 }
 
 // reQueue adds an item to the GPQ with a specific key restored from the disk cache
+// This function exists because the item is already in the disk cache and we don't want to write it again
+// nor change its original values or priority
 func (g *GPQ[d]) reQueue(data d, priorityBucket int64, escalate bool, escalationRate time.Duration, canTimeout bool, timeout time.Duration, key []byte) error {
 
 	if priorityBucket > g.BucketCount {
@@ -305,8 +311,10 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 	priority = p
 	data = item
 
+	// This whole branch is just to ensure that if disk cache is enabled, we delete the item from the disk cache
+	// The data is already removed from the priority queue and the entry recovered from RAM
 	if g.diskCacheEnabled {
-
+		// If lazy disk cache is enabled, schedule the item for deletion
 		if g.lazyDiskCache {
 			g.lazyDiskDeleteChan <- schema.LazyMessageQueueItem{
 				ID:               key,
@@ -315,7 +323,7 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 				WasRestored:      wasRestored,
 			}
 		} else {
-			// Get the item from the disk cache
+			// If the lazy disk cache is not enabled, delete the item from the disk cache synchronously
 			var value []byte
 			err = g.diskCache.View(func(txn *badger.Txn) error {
 				item, err := txn.Get(key)
@@ -327,10 +335,12 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 					return nil
 				})
 			})
+
 			if err != nil {
 				return -1, data, err
 			}
 
+			// Unpack and decode the item from the byte slice
 			var buf bytes.Buffer
 			buf.Write(value)
 			obj := schema.Item[d]{}
@@ -357,13 +367,16 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 // It returns an array of errors if any of the required data structures are missing or if there are no items to prioritize.
 func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs []error) {
 
+	// Iterate over each bucket in the GPQ
 	for bucketID := 0; bucketID < int(g.BucketCount); bucketID++ {
 
+		// Retrieve the priority queue and lock the corresponding mutex
 		pq, _ := g.buckets.Get(int64(bucketID))
 		mutex, _ := g.bucketPrioritizeLockMap.Get(int64(bucketID))
 		mutex.Lock()
 		pointers := pq.ReadPointers()
 
+		// If there are no items in the bucket, continue to the next bucket
 		if len(pointers) == 0 {
 			errs = append(errs, errors.New("No items to prioritize in heap: "+fmt.Sprintf("%d", bucketID)))
 			mutex.Unlock()
@@ -371,8 +384,8 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 		}
 
 		evalTime := time.Now()
-		for _, pointer := range pointers {
 
+		for _, pointer := range pointers {
 			// The pointer may be nil if the item was dequeued faster than the prioritize function could run
 			// over all the items in the bucket. This is not an error, so we continue to the next item.
 			if pointer == nil {
@@ -383,11 +396,13 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 			if pointer.CanTimeout {
 				duration := int(math.Abs(float64(pointer.SubmittedAt.Sub(evalTime).Milliseconds())))
 				if duration > int(pointer.Timeout.Milliseconds()) {
+
 					pq.Remove(pointer)
 					atomic.AddUint64(&timedOutItems, 1)
+
 					if g.diskCacheEnabled {
 						if g.lazyDiskCache {
-							// Send the item to the lazy disk cache deleter
+							// If lazy disk cache is enabled, schedule the item for deletion
 							g.lazyDiskDeleteChan <- schema.LazyMessageQueueItem{
 								ID:               pointer.DiskUUID,
 								Data:             nil,
@@ -396,7 +411,7 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 							}
 
 						} else {
-							// Delete the item from the disk cache
+							// If the lazy disk cache is not enabled, delete the item from the disk cache synchronously
 							g.diskCache.Update(func(txn *badger.Txn) error {
 								return txn.Delete(pointer.DiskUUID)
 							})
@@ -417,12 +432,15 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 
 				// If the number of durations is greater than 0, escalate the priority
 				if numDurations > 0 {
+					// Deincrement the priority by the number of durations
 					pointer.Priority = pointer.Priority - int64(numDurations)
 					// We don't want to escalate past the highest priority
 					if pointer.Priority < 0 {
 						pointer.Priority = 0
 					}
 					pointer.LastEscalated = evalTime
+
+					// Update the the pointer in the priority queue
 					pq.UpdatePriority(pointer, pointer.Priority)
 					atomic.AddUint64(&escalatedItems, 1)
 				}
@@ -464,7 +482,7 @@ func (g *GPQ[d]) Peek() (data d, err error) {
 
 }
 
-// Close closes the GPQ and the disk cache
+// Close performs a safe shutdown of the GPQ and the disk cache preventing data loss
 func (g *GPQ[d]) Close() {
 	close(g.lazyDiskSendChan)
 	close(g.lazyDiskDeleteChan)
@@ -480,20 +498,23 @@ func (g *GPQ[d]) Close() {
 }
 
 func (g *GPQ[d]) lazyDiskLoader(maxDelay time.Duration) {
+	// Prevent termination of the function until all batches are synced
 	g.activeDBSessions.Add(1)
 	defer g.activeDBSessions.Done()
-
 	g.allBatchesSynced.Add(1)
 	defer g.allBatchesSynced.Done()
 
+	// A batch is a map of items that are sent to the disk cache in a certain priority bucket and interval
+	// The batch is sent to the disk cache when it reaches a certain size or a certain time has passed
+	// In the case that termination is requested, the batch is sent to the disk cache and the function returns
 	batch := make(map[uint64][]schema.LazyMessageQueueItem, 0)
 	ticker := time.NewTicker(maxDelay)
-
 	for {
 		select {
+		// Wait to receive items from the lazy disk send channel
 		case item, ok := <-g.lazyDiskSendChan:
+			// Channel is closed, process remaining batch and return
 			if !ok {
-				// Channel is closed, process remaining batch and return
 				for k, v := range batch {
 					g.processBatch(v)
 					batch[k] = batch[k][:0]
@@ -502,17 +523,22 @@ func (g *GPQ[d]) lazyDiskLoader(maxDelay time.Duration) {
 				return
 			}
 
+			// Add the item to the appropriate batch
 			batch[item.TransactionBatch] = append(batch[item.TransactionBatch], item)
 
+			// If the batch is full, process it and delete the items from the disk cache
+			// This whole mechanism is designed to prevent the disk cache from being overwhelmed with small iops
+			// Batch numbers are assigned upstream since that number needs to be stored in RAM and on disk
 			if len(batch[item.TransactionBatch]) >= int(g.batchSize) {
-				synced, ok := g.syncedBatches.Load(item.TransactionBatch)
-				if ok && synced.(bool) == true {
+				_, ok := g.syncedBatches.Load(item.TransactionBatch)
+				if ok {
 					g.processBatch(batch[item.TransactionBatch])
 					batch[item.TransactionBatch] = batch[item.TransactionBatch][:0]
 					g.syncedBatches.Store(item.TransactionBatch, true)
 				}
 			}
 
+		// Even if the batch is not full, if the max delay has passed, process the batch anyway
 		case <-ticker.C:
 			for k, v := range batch {
 				if len(v) >= int(g.batchSize) {
@@ -526,9 +552,15 @@ func (g *GPQ[d]) lazyDiskLoader(maxDelay time.Duration) {
 }
 
 func (g *GPQ[d]) lazyDiskDeleter() {
+	// Prevent termination of the function until all batches are synced
 	g.activeDBSessions.Add(1)
 	defer g.activeDBSessions.Done()
 
+	// We have two buckets to manage, one for items that are restored and one for items that are new
+	// This is used because batch number is assigned at the time of enqueuing and becomes invalid if
+	// the item is enqueued, the program shuts down, and the item is restored.
+	// (Since the batch number is incremented on each enqueue and only stored in RAM)
+	// To avoid this we just assign restored items to a separate slice
 	batch := make(map[uint64][]schema.LazyMessageQueueItem, 0)
 	restored := make([]schema.LazyMessageQueueItem, 0)
 
@@ -538,8 +570,8 @@ func (g *GPQ[d]) lazyDiskDeleter() {
 			if !ok {
 
 				g.allBatchesSynced.Wait()
-
 				g.deleteBatch(restored)
+
 				// Channel is closed, process remaining batch and return
 				for _, v := range batch {
 					g.deleteBatch(v)
@@ -562,10 +594,16 @@ func (g *GPQ[d]) lazyDiskDeleter() {
 
 				// If the batch is full, process it and delete the items from the disk cache
 				if len(batch[item.TransactionBatch]) >= int(g.batchSize) {
+					// Check if the batch has been synced
+					// We will silently fail items that don't exist in the disk cache
+					// so we must wait for them to sync fully then we remove them
+					// To avoid this we just wait for the all members of the batch to sync.
+					// Its a little extra ram but is bounded to (unsynced batches * max batch size)
 					synced, ok := g.syncedBatches.Load(item.TransactionBatch)
 					if ok && synced.(bool) == true {
 						g.deleteBatch(batch[item.TransactionBatch])
 						batch[item.TransactionBatch] = batch[item.TransactionBatch][:0]
+						// Remove the batch from the synced batches
 						g.syncedBatches.Delete(item.TransactionBatch)
 					}
 				}

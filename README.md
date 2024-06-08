@@ -33,10 +33,11 @@ GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https
 ## Benchmarks
 Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, Zig, and Go to measure GPQ's performance against the standard implementations of other languages. 
 
-**While not a direct comparison, 10 million entries fully enqueued and dequeued (WITHOUT multiple routines) takes about 3.5 seconds with Go/GPQ, 5.5 seconds with Zig, 6 seconds with Rust, and about 9 seconds for C++**. (Happy to have someone who knows C++ or Rust or Zig well to comment here and update what I have in [bench](https://github.com/JustinTimperio/gpq/tree/master/bench))
+**While not a fully direct comparison, 10 million entries fully enqueued and dequeued (WITHOUT multiple routines) takes about 3.8 seconds with Go/GPQ, 6.2 seconds with Zig, 5.8 seconds with Rust, and about 9.5 seconds for C++**. (Happy to have someone who knows C++ or Rust or Zig well to comment here and update what I have in [bench](https://github.com/JustinTimperio/gpq/tree/master/bench))
 
 
 <p align="center">
+  <img src="./docs/Time-Spent-(seconds)-vs-Language.png">
   <img src="./docs/Queue-Speed-WITHOUT-Reprioritize.png">
   <img src="./docs/Queue-Speed-WITH-Reprioritize.png">
   <img src="./docs/Reprioritize-All-Buckets-Every-100-Milliseconds-VS-No-Reprioritze.png">
@@ -95,8 +96,8 @@ defaultEnqueueOptions := schema.EnqueueOptions{
 queue := gpq.NewGPQ[int](opts)
 
 var (
-	data int = 1
-	priority int64 = 5 
+  data int = 1
+  priority int64 = 5
   options = defaultEnqueueOptions
 )
 

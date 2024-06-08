@@ -50,15 +50,14 @@ func (pq *CorePriorityQueue[T]) EnQueue(data schema.Item[T]) {
 	pq.mutex.Lock()
 	defer pq.mutex.Unlock()
 
+	// Add the item to the heap
 	n := len(pq.items)
 	item := data
 	item.Index = n
 	pq.items = append(pq.items, &item)
-
 	atomic.AddUint64(&pq.bpq.ObjectsInQueue, 1)
-	if !pq.bpq.Contains(item.Priority) {
-		pq.bpq.Add(item.Priority)
-	}
+
+	pq.bpq.Add(item.Priority)
 }
 
 // DeQueue removes the first item from the heap
