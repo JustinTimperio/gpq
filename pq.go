@@ -8,15 +8,15 @@ import (
 	"github.com/JustinTimperio/gpq/schema"
 )
 
-// CorePriorityQueue implements heap.Interface and holds Items.
-type CorePriorityQueue[T any] struct {
+// corePriorityQueue implements heap.Interface and holds Items.
+type corePriorityQueue[T any] struct {
 	items []*schema.Item[T]
 	mutex *sync.RWMutex
 }
 
 // NewCorePriorityQueue creates a new CorePriorityQueue
-func NewCorePriorityQueue[T any]() CorePriorityQueue[T] {
-	return CorePriorityQueue[T]{
+func NewCorePriorityQueue[T any]() corePriorityQueue[T] {
+	return corePriorityQueue[T]{
 		items: make([]*schema.Item[T], 0),
 		mutex: &sync.RWMutex{},
 	}
@@ -24,26 +24,26 @@ func NewCorePriorityQueue[T any]() CorePriorityQueue[T] {
 
 // Len is used to get the length of the heap
 // It is needed to implement the heap.Interface
-func (pq *CorePriorityQueue[T]) Len() int {
+func (pq *corePriorityQueue[T]) Len() int {
 	return len(pq.items)
 }
 
 // Less is used to compare the priority of two items
 // It is needed to implement the heap.Interface
-func (pq *CorePriorityQueue[T]) Less(i, j int) bool {
+func (pq *corePriorityQueue[T]) Less(i, j int) bool {
 	return pq.items[i].Priority > pq.items[j].Priority
 }
 
 // Swap is used to swap two items in the heap
 // It is needed to implement the heap.Interface
-func (pq *CorePriorityQueue[T]) Swap(i, j int) {
+func (pq *corePriorityQueue[T]) Swap(i, j int) {
 	pq.items[i], pq.items[j] = pq.items[j], pq.items[i]
 	pq.items[i].Index = i
 	pq.items[j].Index = j
 }
 
 // EnQueue adds an item to the heap at the end of the array
-func (pq *CorePriorityQueue[T]) EnQueue(data schema.Item[T]) {
+func (pq *corePriorityQueue[T]) EnQueue(data schema.Item[T]) {
 	pq.mutex.Lock()
 	defer pq.mutex.Unlock()
 
@@ -55,7 +55,7 @@ func (pq *CorePriorityQueue[T]) EnQueue(data schema.Item[T]) {
 }
 
 // DeQueue removes the first item from the heap
-func (pq *CorePriorityQueue[T]) DeQueue() (wasRecoverd bool, batchNumber uint64, diskUUID []byte, priority int64, data T, err error) {
+func (pq *corePriorityQueue[T]) DeQueue() (wasRecoverd bool, batchNumber uint64, diskUUID []byte, priority int64, data T, err error) {
 	pq.mutex.Lock()
 	defer pq.mutex.Unlock()
 
@@ -74,7 +74,7 @@ func (pq *CorePriorityQueue[T]) DeQueue() (wasRecoverd bool, batchNumber uint64,
 }
 
 // Peek returns the first item in the heap without removing it
-func (pq *CorePriorityQueue[T]) Peek() (data T, err error) {
+func (pq *corePriorityQueue[T]) Peek() (data T, err error) {
 	pq.mutex.RLock()
 	defer pq.mutex.RUnlock()
 	if len(pq.items) == 0 {
@@ -84,12 +84,12 @@ func (pq *CorePriorityQueue[T]) Peek() (data T, err error) {
 }
 
 // Exposes the raw pointers to the items in the queue so that reprioritization can be done
-func (pq *CorePriorityQueue[T]) ReadPointers() []*schema.Item[T] {
+func (pq *corePriorityQueue[T]) ReadPointers() []*schema.Item[T] {
 	return pq.items
 }
 
 // UpdatePriority modifies the priority of an Item in the queue.
-func (pq *CorePriorityQueue[T]) UpdatePriority(item *schema.Item[T], priority int64) {
+func (pq *corePriorityQueue[T]) UpdatePriority(item *schema.Item[T], priority int64) {
 	pq.mutex.Lock()
 	defer pq.mutex.Unlock()
 	item.Priority = priority
@@ -97,7 +97,7 @@ func (pq *CorePriorityQueue[T]) UpdatePriority(item *schema.Item[T], priority in
 }
 
 // Remove removes an item from the queue
-func (pq *CorePriorityQueue[T]) Remove(item *schema.Item[T]) {
+func (pq *corePriorityQueue[T]) Remove(item *schema.Item[T]) {
 	pq.mutex.Lock()
 	defer pq.mutex.Unlock()
 	gheap.Remove[T](pq, item.Index)
@@ -105,7 +105,7 @@ func (pq *CorePriorityQueue[T]) Remove(item *schema.Item[T]) {
 
 // NoLockDeQueue removes the first item from the heap without locking the queue
 // This is used for nested calls to avoid deadlocks
-func (pq *CorePriorityQueue[T]) NoLockDeQueue() {
+func (pq *corePriorityQueue[T]) NoLockDeQueue() {
 	old := pq.items
 	n := len(old)
 	item := old[n-1]

@@ -15,7 +15,7 @@ type Bucket struct {
 // This is a combination of a HashSet, doubly linked list, and a priority queue
 // to allow for O(1) removal of buckets and removal of items from the buckets
 // and O(1) addition of buckets and addition of items to the buckets
-type BucketPriorityQueue struct {
+type bucketPriorityQueue struct {
 	ActiveBuckets int64
 	BucketIDs     map[int64]*Bucket
 	First, Last   *Bucket
@@ -23,19 +23,19 @@ type BucketPriorityQueue struct {
 }
 
 // NewBucketPriorityQueue creates a new BucketPriorityQueue
-func NewBucketPriorityQueue() *BucketPriorityQueue {
-	return &BucketPriorityQueue{
+func NewBucketPriorityQueue() *bucketPriorityQueue {
+	return &bucketPriorityQueue{
 		ActiveBuckets: 0,
 		BucketIDs:     make(map[int64]*Bucket),
 		mutex:         &sync.Mutex{},
 	}
 }
 
-func (bpq *BucketPriorityQueue) Len() *int64 {
+func (bpq *bucketPriorityQueue) Len() *int64 {
 	return &bpq.ActiveBuckets
 }
 
-func (bpq *BucketPriorityQueue) Peek() (bucketID int64, exists bool) {
+func (bpq *bucketPriorityQueue) Peek() (bucketID int64, exists bool) {
 	bpq.mutex.Lock()
 	defer bpq.mutex.Unlock()
 
@@ -45,7 +45,7 @@ func (bpq *BucketPriorityQueue) Peek() (bucketID int64, exists bool) {
 	return bpq.First.BucketID, true
 }
 
-func (bpq *BucketPriorityQueue) Add(bucketID int64) {
+func (bpq *bucketPriorityQueue) Add(bucketID int64) {
 	bpq.mutex.Lock()
 	defer bpq.mutex.Unlock()
 
@@ -89,7 +89,7 @@ func (bpq *BucketPriorityQueue) Add(bucketID int64) {
 	atomic.AddInt64(&bpq.ActiveBuckets, 1)
 }
 
-func (bpq *BucketPriorityQueue) Remove(bucketID int64) {
+func (bpq *bucketPriorityQueue) Remove(bucketID int64) {
 	bpq.mutex.Lock()
 	defer bpq.mutex.Unlock()
 
