@@ -10,6 +10,7 @@
 ## Table of Contents
 - [Table of Contents](#table-of-contents)
 - [Background](#background)
+  - [Should I Use GPQ?](#should-i-use-gpq)
   - [Sister Projects](#sister-projects)
 - [Benchmarks](#benchmarks)
 - [Usage](#usage)
@@ -27,6 +28,14 @@
 ## Background
 GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https://en.wikipedia.org/wiki/Fibonacci_heap) and wanted to find something faster. I was disappointed by the state of research and libraries being used by most common applications, so GPQ is meant to be a highly flexible framework that can support a multitude of workloads.
 
+### Should I Use GPQ?
+GPQ is a concurrency safe, embeddable priority queue that can be used in a variety of applications. GPQ might be the right choice if:
+- Your data requires strict ordering guarantees
+- You need to prioritize items that are in the queue too long 
+- You need to timeout items
+- You have multiple writers and readers that need to access the queue concurrently
+- You run critical workloads and need to store the queue on disk in case of a crash
+
 ### Sister Projects
 - [fibheap (Fibonacci Heaps)](https://github.com/JustinTimperio/fibheap)
 - [rpq (Rust Priority Queue)](https://github.com/JustinTimperio/rpq)
@@ -37,10 +46,10 @@ GPQ was written as an experiment when I was playing with [Fibonacci Heaps](https
 ## Benchmarks
 Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, Zig, and Go to measure GPQ's performance against the standard implementations of other languages that can be found here at: [pq-bench](https://github.com/JustinTimperio/pq-bench) 
 
-|                                                                            |                                                                                                                                                    |
-|----------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| ![Time-Spent](./docs/Time-Spent-(seconds)-vs-Language.png)                 | ![Queue-Speed-WITHOUT-Reprioritize](./docs/Queue-Speed-WITHOUT-Reprioritize.png)                                                                   |
-| ![Queue-Speed-WITH-Reprioritize](./docs/Queue-Speed-WITH-Reprioritize.png) | ![Reprioritize-All-Buckets-Every-100-Milliseconds-VS-No-Reprioritze](./docs/Reprioritize-All-Buckets-Every-100-Milliseconds-VS-No-Reprioritze.png) |
+|                                                                                                             |                                                                                                                                                    |
+|-------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| ![Time-Spent](https://github.com/JustinTimperio/pq-bench/blob/master/docs/Time-Spent-vs-Implementation.png) | ![Queue-Speed-WITHOUT-Reprioritize](./docs/Queue-Speed-WITHOUT-Reprioritize.png)                                                                   |
+| ![Queue-Speed-WITH-Reprioritize](./docs/Queue-Speed-WITH-Reprioritize.png)                                  | ![Reprioritize-All-Buckets-Every-100-Milliseconds-VS-No-Reprioritze](./docs/Reprioritize-All-Buckets-Every-100-Milliseconds-VS-No-Reprioritze.png) |
 
 ## Usage
 GPQ at the core is a embeddable priority queue meant to be used at the core of critical workloads that require complex queueing and delivery order guarantees. The best way to use it is just to import it.
