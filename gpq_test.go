@@ -19,6 +19,11 @@ import (
 func TestGPQ(t *testing.T) {
 
 	var (
+		senderRoutines   int = 20
+		receiverRoutines int = 1
+	)
+
+	var (
 		total                 int  = 10000000
 		print                 bool = false
 		sent                  uint64
@@ -92,10 +97,11 @@ func TestGPQ(t *testing.T) {
 	wg := &sync.WaitGroup{}
 
 	go func() {
-		for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received) < uint64(total) {
+		for atomic.LoadUint64(&queue.ObjectsInQueue) > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
 			time.Sleep(1 * time.Second)
 			to, es, err := queue.Prioritize()
 			if err != nil {
+				log.Println(err)
 			}
 			atomic.AddUint64(&timedOut, to)
 			log.Println("Hits:", hits, "Misses:", missed, "Sent:", sent, "Received:", missed+hits, "Timed Out:", timedOut, "Empty Messages:", emptyMessage, "Escalated:", es, "Prioritized:", to)
@@ -103,15 +109,21 @@ func TestGPQ(t *testing.T) {
 	}()
 
 	timer := time.Now()
-	wg.Add(10)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < senderRoutines; i++ {
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := 0; i < total/10; i++ {
-				p := i % 10
+			var c int
+			for {
+
+				if atomic.LoadUint64(&sent) >= uint64(total) {
+					break
+				}
+
+				p := c % int(queue.BucketCount)
 				timer := time.Now()
 				err := queue.EnQueue(
-					i,
+					0,
 					int64(p),
 					defaultMessageOptions,
 				)
@@ -122,44 +134,41 @@ func TestGPQ(t *testing.T) {
 					log.Println("EnQueue", p, time.Since(timer))
 				}
 				atomic.AddUint64(&sent, 1)
+				c++
 			}
 		}()
 	}
 
-	wg.Add(1)
-	for i := 0; i < 1; i++ {
+	for i := 0; i < receiverRoutines; i++ {
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
 
 			var lastPriority int64
-			for retries := int64(0); retries < 10; retries++ {
-				for atomic.LoadUint64(&queue.NonEmptyBuckets.ObjectsInQueue) > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
-					timer := time.Now()
-					priority, item, err := queue.DeQueue()
-					if err != nil {
-						if err.Error() == "No items in any queue" || err.Error() == "Core Priority Queue Error: No items found in the queue" {
-							atomic.AddInt64(&emptyMessage, 1)
-							time.Sleep(10 * time.Millisecond)
-							lastPriority = 0
-							continue
-						}
-						log.Fatalln(err)
+			for atomic.LoadUint64(&queue.ObjectsInQueue) > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
+				timer := time.Now()
+				priority, item, err := queue.DeQueue()
+				if err != nil {
+					if err.Error() == "No items in any queue" || err.Error() == "Core Priority Queue Error: No items found in the queue" {
+						atomic.AddInt64(&emptyMessage, 1)
+						time.Sleep(10 * time.Millisecond)
+						lastPriority = 0
+						continue
 					}
-
-					atomic.AddUint64(&received, 1)
-					if print {
-						log.Println("DeQueue", priority, received, item, time.Since(timer))
-					}
-
-					if lastPriority > priority {
-						missed++
-					} else {
-						hits++
-					}
-					lastPriority = priority
-					atomic.StoreInt64(&retries, 0)
+					log.Fatalln(err)
 				}
-				time.Sleep(10 * time.Millisecond)
+
+				atomic.AddUint64(&received, 1)
+				if print {
+					log.Println("DeQueue", priority, received, item, time.Since(timer))
+				}
+
+				if lastPriority > priority {
+					missed++
+				} else {
+					hits++
+				}
+				lastPriority = priority
 			}
 		}()
 	}

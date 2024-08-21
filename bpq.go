@@ -16,21 +16,18 @@ type Bucket struct {
 // to allow for O(1) removal of buckets and removal of items from the buckets
 // and O(1) addition of buckets and addition of items to the buckets
 type BucketPriorityQueue struct {
-	ActiveBuckets  int64
-	BucketIDs      map[int64]*Bucket
-	First, Last    *Bucket
-	LastRemoved    int64
-	ObjectsInQueue uint64
-	mutex          *sync.Mutex
+	ActiveBuckets int64
+	BucketIDs     map[int64]*Bucket
+	First, Last   *Bucket
+	mutex         *sync.Mutex
 }
 
 // NewBucketPriorityQueue creates a new BucketPriorityQueue
 func NewBucketPriorityQueue() *BucketPriorityQueue {
 	return &BucketPriorityQueue{
-		ActiveBuckets:  0,
-		ObjectsInQueue: 0,
-		BucketIDs:      make(map[int64]*Bucket),
-		mutex:          &sync.Mutex{},
+		ActiveBuckets: 0,
+		BucketIDs:     make(map[int64]*Bucket),
+		mutex:         &sync.Mutex{},
 	}
 }
 
@@ -117,5 +114,4 @@ func (bpq *BucketPriorityQueue) Remove(bucketID int64) {
 	// Remove the bucket from the map and decrement the active bucket count
 	delete(bpq.BucketIDs, bucketID)
 	atomic.AddInt64(&bpq.ActiveBuckets, -1)
-	atomic.StoreInt64(&bpq.LastRemoved, bucketID)
 }
