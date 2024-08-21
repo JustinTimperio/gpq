@@ -62,10 +62,12 @@ import "github.com/JustinTimperio/gpq"
 For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github.com/cornelk/hashmap) and [BadgerDB](https://github.com/dgraph-io/badger). 
 
 ### API Reference
-1. `NewGPQ[d any](NumOfBuckets int) *GPQ[d]` - Creates a new GPQ with n number of buckets 
-   1. `EnQueue(data d, priorityBucket int64, escalationRate time.Duration) error` - Adds a piece of data into the queue with a priority and escalation rate 
-   2. `DeQueue() (priority int64, data d, err error)` - Retrieves the highest priority item in the queue along with its priority
-   3. `Prioritize() (uint64, []error)` - Prioritize stops transactions on each bucket concurrently to shuffle the priorities internally within the bucket depending on the escalation rate given at time of EnQueue'ing
+- `NewGPQ[d any](NumOfBuckets int) *GPQ[d]` - Creates a new GPQ with n number of buckets 
+  - `EnQueue(data d, priorityBucket int64, escalationRate time.Duration) error` - Adds a piece of data into the queue with a priority and escalation rate 
+   - `DeQueue() (priority int64, data d, err error)` - Retrieves the highest priority item in the queue along with its priority
+   - `Prioritize() (uint64, []error)` - Prioritize stops transactions on each bucket concurrently to shuffle the priorities internally within the bucket depending on the escalation rate given at time of EnQueue'ing
+   - `Peek() (priority int64, data d, err error)` - Retrieves the highest priority item in the queue without removing it
+   - `Close()` - Closes the queue and syncs the queue to disk if enabled
 
 ### Submitting Items to the Queue
 Once you have an initialized queue you can easily submit items like the following:

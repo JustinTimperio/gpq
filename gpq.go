@@ -25,14 +25,13 @@ import (
 // The GPQ is thread-safe and supports concurrent access
 type GPQ[d any] struct {
 	// BucketCount is the number of priority buckets
-	BucketCount int64
+	bucketCount int64
 	// ObjectsInQueue is the number of objects in the queue
-	ObjectsInQueue uint64
-
+	objectsInQueue uint64
 	// NonEmptyBuckets is a priority queue of non-empty buckets
-	nonEmptyBuckets *BucketPriorityQueue
+	nonEmptyBuckets *bucketPriorityQueue
 	// buckets is a map of priority buckets
-	buckets *hashmap.Map[int64, *CorePriorityQueue[d]]
+	buckets *hashmap.Map[int64, *corePriorityQueue[d]]
 	// bucketPrioritizeLockMap is a map of locks for each priority bucket
 	bucketPrioritizeLockMap *hashmap.Map[int64, *sync.Mutex]
 	// activeDBSessions is a wait group for active disk cache sessions
@@ -66,11 +65,10 @@ type GPQ[d any] struct {
 func NewGPQ[d any](Options schema.GPQOptions) (uint64, *GPQ[d], error) {
 
 	gpq := &GPQ[d]{
-		BucketCount:    int64(Options.NumberOfBuckets),
-		ObjectsInQueue: 0,
-
+		bucketCount:             int64(Options.NumberOfBuckets),
+		objectsInQueue:          0,
 		nonEmptyBuckets:         NewBucketPriorityQueue(),
-		buckets:                 hashmap.New[int64, *CorePriorityQueue[d]](),
+		buckets:                 hashmap.New[int64, *corePriorityQueue[d]](),
 		diskCacheEnabled:        Options.DiskCacheEnabled,
 		activeDBSessions:        &sync.WaitGroup{},
 		bucketPrioritizeLockMap: hashmap.New[int64, *sync.Mutex](),
@@ -181,13 +179,17 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint64, *GPQ[d], error) {
 	return reEnqueued, gpq, nil
 }
 
+func (g *GPQ[d]) Len() uint64 {
+	return atomic.LoadUint64(&g.objectsInQueue)
+}
+
 // EnQueue adds an item to the GPQ
 // The priorityBucket is the priority level of the item
 // The escalationRate is the amount of time before the item is escalated to the next priority level
 // The data is the data you want to store in the GPQ item
 func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, options schema.EnQueueOptions) error {
 
-	if priorityBucket > g.BucketCount {
+	if priorityBucket > g.bucketCount {
 		return errors.New("Priority bucket does not exist")
 	}
 
@@ -255,7 +257,7 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, options schema.EnQueueOpt
 
 	// Enqueue the item
 	pq.EnQueue(obj)
-	atomic.AddUint64(&g.ObjectsInQueue, 1)
+	atomic.AddUint64(&g.objectsInQueue, 1)
 	g.nonEmptyBuckets.Add(priorityBucket)
 
 	return nil
@@ -266,7 +268,7 @@ func (g *GPQ[d]) EnQueue(data d, priorityBucket int64, options schema.EnQueueOpt
 // nor change its original values or priority
 func (g *GPQ[d]) reQueue(data d, priorityBucket int64, escalate bool, escalationRate time.Duration, canTimeout bool, timeout time.Duration, key []byte) error {
 
-	if priorityBucket > g.BucketCount {
+	if priorityBucket > g.bucketCount {
 		return errors.New("Priority bucket does not exist")
 	}
 
@@ -286,7 +288,7 @@ func (g *GPQ[d]) reQueue(data d, priorityBucket int64, escalate bool, escalation
 
 	pq, _ := g.buckets.Get(priorityBucket)
 	pq.EnQueue(obj)
-	atomic.AddUint64(&g.ObjectsInQueue, 1)
+	atomic.AddUint64(&g.objectsInQueue, 1)
 	g.nonEmptyBuckets.Add(priorityBucket)
 
 	return nil
@@ -298,7 +300,7 @@ func (g *GPQ[d]) reQueue(data d, priorityBucket int64, escalate bool, escalation
 func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 
 	// Return an error if there are no items in any bucket
-	if atomic.LoadUint64(&g.ObjectsInQueue) == 0 {
+	if atomic.LoadUint64(&g.objectsInQueue) == 0 {
 		return -1, data, errors.New("No items in any queue")
 	}
 
@@ -314,7 +316,7 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 	if err != nil {
 		return -1, data, err
 	}
-	atomic.AddUint64(&g.ObjectsInQueue, ^uint64(0))
+	atomic.AddUint64(&g.objectsInQueue, ^uint64(0))
 	if pq.Len() == 0 {
 		g.nonEmptyBuckets.Remove(priorityBucket)
 	}
@@ -378,7 +380,7 @@ func (g *GPQ[d]) DeQueue() (priority int64, data d, err error) {
 func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs []error) {
 
 	// Iterate over each bucket in the GPQ
-	for bucketID := 0; bucketID < int(g.BucketCount); bucketID++ {
+	for bucketID := 0; bucketID < int(g.bucketCount); bucketID++ {
 
 		// Retrieve the priority queue and lock the corresponding mutex
 		pq, _ := g.buckets.Get(int64(bucketID))
@@ -465,11 +467,11 @@ func (g *GPQ[d]) Prioritize() (timedOutItems uint64, escalatedItems uint64, errs
 
 // Peek returns the item with the highest priority from the GPQ.
 // It returns the data associated with the item and an error if the queue is empty.
-func (g *GPQ[d]) Peek() (data d, err error) {
+func (g *GPQ[d]) Peek() (priority int64, data d, err error) {
 
 	// Return an error if there are no items in the queue
-	if atomic.LoadUint64(&g.ObjectsInQueue) == 0 {
-		return data, errors.New("No items in any queue")
+	if atomic.LoadUint64(&g.objectsInQueue) == 0 {
+		return 0, data, errors.New("No items in any queue")
 	}
 
 	// Get the first item from the highest priority bucket
@@ -477,7 +479,7 @@ func (g *GPQ[d]) Peek() (data d, err error) {
 	// This structure allows for O(1) access to the highest priority item
 	priorityBucket, exists := g.nonEmptyBuckets.Peek()
 	if !exists {
-		return data, errors.New("No item in queue bucket")
+		return 0, data, errors.New("No item in queue bucket")
 	}
 
 	pq, _ := g.buckets.Get(priorityBucket)
@@ -485,10 +487,10 @@ func (g *GPQ[d]) Peek() (data d, err error) {
 	// Dequeue the item
 	item, err := pq.Peek()
 	if err != nil {
-		return item, err
+		return priorityBucket, item, err
 	}
 
-	return item, nil
+	return priorityBucket, item, nil
 
 }
 

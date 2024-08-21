@@ -97,7 +97,7 @@ func TestGPQ(t *testing.T) {
 	wg := &sync.WaitGroup{}
 
 	go func() {
-		for atomic.LoadUint64(&queue.ObjectsInQueue) > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
+		for queue.Len() > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
 			time.Sleep(1 * time.Second)
 			to, es, err := queue.Prioritize()
 			if err != nil {
@@ -120,7 +120,7 @@ func TestGPQ(t *testing.T) {
 					break
 				}
 
-				p := c % int(queue.BucketCount)
+				p := c % int(opts.NumberOfBuckets)
 				timer := time.Now()
 				err := queue.EnQueue(
 					0,
@@ -145,7 +145,7 @@ func TestGPQ(t *testing.T) {
 			defer wg.Done()
 
 			var lastPriority int64
-			for atomic.LoadUint64(&queue.ObjectsInQueue) > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
+			for queue.Len() > 0 || atomic.LoadUint64(&received)+atomic.LoadUint64(&timedOut) < uint64(total) {
 				timer := time.Now()
 				priority, item, err := queue.DeQueue()
 				if err != nil {
