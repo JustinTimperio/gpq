@@ -67,6 +67,7 @@ For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github
    - `DeQueue() (priority int64, data d, err error)` - Retrieves the highest priority item in the queue along with its priority
    - `Prioritize() (uint64, []error)` - Prioritize stops transactions on each bucket concurrently to shuffle the priorities internally within the bucket depending on the escalation rate given at time of EnQueue'ing
    - `Peek() (priority int64, data d, err error)` - Retrieves the highest priority item in the queue without removing it
+   - `Len() uint64` - Returns the number of items in the queue
    - `Close()` - Closes the queue and syncs the queue to disk if enabled
 
 ### Submitting Items to the Queue
