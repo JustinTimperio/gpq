@@ -1,16 +1,17 @@
 package schema
 
 import (
+	"bytes"
+	"encoding/gob"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
 )
 
 // Item is used to store items in the GPQ
-// Internal use only
 type Item[d any] struct {
 	// User
-	Priority       int64
+	Priority       uint
 	Data           d
 	DiskUUID       []byte
 	ShouldEscalate bool
@@ -19,42 +20,79 @@ type Item[d any] struct {
 	Timeout        time.Duration
 
 	// Internal
-	SubmittedAt   time.Time
-	LastEscalated time.Time
-	Index         int
-	BatchNumber   uint64
-	WasRestored   bool
+	SubmittedAt      time.Time
+	LastEscalated    time.Time
+	Index            int
+	InternalPriority int
+	BatchNumber      uint
+	WasRestored      bool
 }
 
-// LazyMessageQueueItem is used to store items in the lazy disk cache
+func NewItem[d any](priority uint, data d, options EnQueueOptions) Item[d] {
+	return Item[d]{
+		Priority:       priority,
+		Data:           data,
+		ShouldEscalate: options.ShouldEscalate,
+		EscalationRate: options.EscalationRate,
+		CanTimeout:     options.CanTimeout,
+		Timeout:        options.Timeout,
+		SubmittedAt:    time.Now(),
+	}
+}
+
+func (i *Item[d]) ToBytes() ([]byte, error) {
+	// Encode the item to a byte slice
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(i)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func (i *Item[d]) FromBytes(data []byte) error {
+	// Decode the item from a byte slice
+	dec := gob.NewDecoder(bytes.NewReader(data))
+	err := dec.Decode(i)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Internal use only
 type LazyMessageQueueItem struct {
 	ID               []byte
 	Data             []byte
-	TransactionBatch uint64
+	TransactionBatch uint
 	WasRestored      bool
 }
 
 // GPQOptions is used to configure the GPQ
 type GPQOptions struct {
-	// Logger provides a custom logger interface
+	// Logger provides a custom logger interface for the Badger cache
 	Logger badger.Logger
-	// Number of buckets to create
-	NumberOfBuckets int
+	// MaxPriority is the maximum priority allowed by this GPQ
+	MaxPriority uint
 
 	// DiskCacheEnabled is used to enable or disable the disk cache
 	DiskCacheEnabled bool
-	// DiskMaxDelay is the maximum delay to wait before writing to disk
-	DiskMaxDelay time.Duration
-	// DiskCachePath is the local path to the disk cache
+	// DiskCacheChannelSize is the length of the channel buffer for the disk cache
+	DiskCacheChannelSize uint
+	// DiskWriteDelay is the delay between writes to disk (used to batch writes)
+	DiskWriteDelay time.Duration
+	// DiskCachePath is the local path to the disk cache directory
 	DiskCachePath string
-	// DiskCacheCompression is used to enable or disable zstd compression
+	// DiskCacheCompression is used to enable or disable zstd compression on the disk cache
 	DiskCacheCompression bool
 
 	// LazyDiskCacheEnabled is used to enable or disable the lazy disk cache
 	LazyDiskCacheEnabled bool
 	// LazyDiskBatchSize is the number of items to write to disk at once
-	LazyDiskBatchSize int
+	LazyDiskBatchSize uint
 
 	// DiskEncryptionEnabled is used to enable or disable disk encryption
 	DiskEncryptionEnabled bool
@@ -64,8 +102,12 @@ type GPQOptions struct {
 
 // EnQueueOptions is used to configure the EnQueue method
 type EnQueueOptions struct {
+	// ShouldEscalate is used to determine if the item should be escalated
 	ShouldEscalate bool
+	// EscalationRate is the time to wait before escalating the item (happens every duration)
 	EscalationRate time.Duration
-	CanTimeout     bool
-	Timeout        time.Duration
+	// CanTimeout is used to determine if the item can timeout
+	CanTimeout bool
+	// Timeout is the time to wait before timing out the item
+	Timeout time.Duration
 }

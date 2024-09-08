@@ -96,7 +96,7 @@ func iter(prioritize bool) {
 func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, received *uint64, reprioritized *uint64, lazy bool) string {
 
 	opts := schema.GPQOptions{
-		NumberOfBuckets:       nBuckets,
+		MaxPriority:           nBuckets,
 		DiskCacheEnabled:      true,
 		DiskCachePath:         "/tmp/gpq/test",
 		DiskCacheCompression:  false,
@@ -141,7 +141,7 @@ func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, r
 			for i := 0; i < total/10; i++ {
 				p := i % nBuckets
 				timer := time.Now()
-				err := queue.EnQueue(
+				err := queue.Enqueue(
 					i,
 					int64(p),
 					defaultMessageOptions,
@@ -169,7 +169,7 @@ func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, r
 		for i := 0; i < retries; i++ {
 			for total > int(*received) {
 				timer := time.Now()
-				priority, item, err := queue.DeQueue()
+				priority, item, err := queue.Dequeue()
 				if err != nil {
 					lastPriority = 0
 					continue

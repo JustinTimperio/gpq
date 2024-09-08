@@ -14,6 +14,8 @@ package gheap
 import (
 	"errors"
 	"sort"
+
+	"github.com/JustinTimperio/gpq/schema"
 )
 
 // The Interface type describes the requirements
@@ -27,18 +29,17 @@ import (
 // Note that [EnQueue] and [DeQueue] in this interface are for package heap's
 // implementation to call. To add and remove things from the heap,
 // use [heap.EnQueue] and [heap.DeQueue].
-type Heap[T any, S any] interface {
+type Heap[S any] interface {
 	sort.Interface
-	EnQueue(x S)                                      // add x as element Len()
-	DeQueue() (bool, uint64, []byte, int64, T, error) // remove and return element Len() - 1.
-	NoLockDeQueue()
+	Enqueue(x *schema.Item[S])         // add x as element Len()
+	Dequeue() (*schema.Item[S], error) // remove and return element Len() - 1.
 }
 
 // Init establishes the heap invariants required by the other routines in this package.
 // Init is idempotent with respect to the heap invariants
 // and may be called whenever the heap invariants may have been invalidated.
 // The complexity is O(n) where n = h.Len().
-func Init[T any, S any](h Heap[T, S]) {
+func Init[S any](h Heap[S]) {
 	// heapify
 	n := h.Len()
 	for i := n/2 - 1; i >= 0; i-- {
@@ -46,40 +47,30 @@ func Init[T any, S any](h Heap[T, S]) {
 	}
 }
 
-// EnQueue EnQueues the element x onto the heap.
+// Enqueues a element x onto the heap.
 // The complexity is O(log n) where n = h.Len().
-func EnQueue[T any, S any](h Heap[T, S], x S) {
-	h.EnQueue(x)
+func Enqueue[S any](h Heap[S], x *schema.Item[S]) {
+	h.Enqueue(x)
 	up(h, h.Len()-1)
 }
 
 // DeQueue removes and returns the minimum element (according to Less) from the heap.
 // The complexity is O(log n) where n = h.Len().
 // DeQueue is equivalent to [Remove](h, 0).
-func DeQueue[T any, S any](h Heap[T, S]) (wasRecovered bool, batchNumber uint64, diskUUID []byte, priority int64, data T, err error) {
+func Dequeue[S any](h Heap[S]) (data *schema.Item[S], err error) {
 	if h.Len() == 0 {
-		return false, 0, nil, -1, data, errors.New("No items in the queue")
+		return data, errors.New("No items in the queue")
 	}
 	n := h.Len() - 1
 	h.Swap(0, n)
 	down(h, 0, n)
-	return h.DeQueue()
-}
-
-func NoLockDeQueue[T any, S any](h Heap[T, S]) {
-	if h.Len() == 0 {
-		return
-	}
-	n := h.Len() - 1
-	h.Swap(0, n)
-	down(h, 0, n)
-	h.NoLockDeQueue()
-	return
+	return h.Dequeue()
 }
 
 // Remove removes and returns the element at index i from the heap.
 // The complexity is O(log n) where n = h.Len().
-func Remove[T any, S any](h Heap[T, S], i int) {
+func Remove[S any](h Heap[S], item *schema.Item[S]) (data *schema.Item[S], err error) {
+	i := item.Index
 	n := h.Len() - 1
 	if n != i {
 		h.Swap(i, n)
@@ -87,21 +78,20 @@ func Remove[T any, S any](h Heap[T, S], i int) {
 			up(h, i)
 		}
 	}
-	h.NoLockDeQueue()
-	return
+	return h.Dequeue()
 }
 
 // Prioritize re-establishes the heap ordering after the element at index i has changed its value.
 // Changing the value of the element at index i and then calling Prioritize is equivalent to,
 // but less expensive than, calling [Remove](h, i) followed by a EnQueue of the new value.
 // The complexity is O(log n) where n = h.Len().
-func Prioritize[T any, S any](h Heap[T, S], i int) {
+func Prioritize[S any](h Heap[S], i int) {
 	if !down(h, i, h.Len()) {
 		up(h, i)
 	}
 }
 
-func up[T any, S any](h Heap[T, S], j int) {
+func up[S any](h Heap[S], j int) {
 	for {
 		i := (j - 1) / 2 // parent
 		if i == j || !h.Less(j, i) {
@@ -112,7 +102,7 @@ func up[T any, S any](h Heap[T, S], j int) {
 	}
 }
 
-func down[T any, S any](h Heap[T, S], i0, n int) bool {
+func down[S any](h Heap[S], i0, n int) bool {
 	i := i0
 	for {
 		j1 := 2*i + 1
