@@ -76,7 +76,7 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 		batchCounter:       NewBatchCounter(Options.LazyDiskBatchSize),
 	}
 
-	if Options.LazyDiskCacheEnabled {
+	if Options.LazyDiskCacheEnabled && Options.DiskCacheEnabled {
 		go gpq.lazyDiskWriter(Options.DiskWriteDelay)
 		go gpq.lazyDiskDeleter()
 	}
