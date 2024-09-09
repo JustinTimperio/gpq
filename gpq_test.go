@@ -140,7 +140,10 @@ func TestPrioritize(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
-				r, e := queue.Prioritize()
+				r, e, err := queue.Prioritize()
+				if err != nil {
+					log.Fatalln(err)
+				}
 				removed += r
 				escalated += e
 				t.Log("Received:", received, "Removed:", removed, "Escalated:", escalated)
@@ -339,7 +342,10 @@ func TestE2EParallel(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
-				r, e := queue.Prioritize()
+				r, e, err := queue.Prioritize()
+				if err != nil {
+					log.Fatalln(err)
+				}
 				removed += r
 				escalated += e
 				t.Log("Received:", received, "Removed:", removed, "Escalated:", escalated)

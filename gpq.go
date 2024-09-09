@@ -211,7 +211,7 @@ func (g *GPQ[d]) DequeueBatch(batchSize uint) (items []schema.Item[d], err error
 	return items, nil
 }
 
-func (g *GPQ[d]) Prioritize() (escalated, removed uint) {
+func (g *GPQ[d]) Prioritize() (escalated, removed uint, err error) {
 	return g.queue.Prioritize()
 }
 

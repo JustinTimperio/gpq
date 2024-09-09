@@ -114,7 +114,10 @@ func bench(total int, buckets int, prioritize bool, disk bool, lazy bool) (total
 		go func() {
 			for {
 				time.Sleep(1 * time.Second)
-				timedOut, prioritized := queue.Prioritize()
+				timedOut, prioritized, err := queue.Prioritize()
+				if err != nil {
+					log.Fatalln(err)
+				}
 				escalated += uint64(prioritized)
 				removed += uint64(timedOut)
 			}

@@ -160,7 +160,7 @@ func (cpq *CorePriorityQueue[T]) DequeueBatch(batchSize uint) (*[]schema.Item[T]
 	return &batch, nil
 }
 
-func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint) {
+func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err error) {
 	cpq.mux.Lock()
 	defer cpq.mux.Unlock()
 
@@ -183,9 +183,10 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint) {
 						}
 					}
 
-					_, err := gheap.Remove[T](bucket, item)
-					if err != nil {
-						panic(err)
+					_, e := gheap.Remove[T](bucket, item)
+					if e != nil {
+						err = fmt.Errorf("Core Priority Queue Error: %w", err)
+						return false
 					}
 					cpq.itemsInQueue--
 					removed++
@@ -208,6 +209,10 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint) {
 		}
 		return true
 	})
+
+	if err != nil {
+		return removed, escalated, err
+	}
 
 	// Iterate through the bucket and escalate items that have been waiting too long
 	cpq.buckets.Range(func(key uint, bucket *priorityQueue[T]) bool {
@@ -238,5 +243,5 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint) {
 		return true
 	})
 
-	return removed, escalated
+	return removed, escalated, nil
 }
