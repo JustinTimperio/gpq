@@ -46,15 +46,20 @@ type GPQ[d any] struct {
 // must be within the range of 0 to NumOfBuckets
 func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 
-	sender := make(chan schema.Item[d], Options.DiskCacheChannelSize)
-	receiver := make(chan schema.Item[d], Options.DiskCacheChannelSize)
-
 	var diskCache *disk.Disk[d]
 	var err error
+	var sender chan schema.Item[d]
+	var receiver chan schema.Item[d]
+
 	if Options.DiskCacheEnabled {
 		diskCache, err = disk.NewDiskCache[d](nil, Options)
 		if err != nil {
 			return 0, nil, err
+		}
+
+		if Options.LazyDiskCacheEnabled {
+			sender = make(chan schema.Item[d], Options.LazyDiskCacheChannelSize)
+			receiver = make(chan schema.Item[d], Options.LazyDiskCacheChannelSize)
 		}
 	}
 
@@ -72,7 +77,7 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 	}
 
 	if Options.LazyDiskCacheEnabled {
-		go gpq.lazyDiskLoader(Options.DiskWriteDelay)
+		go gpq.lazyDiskWriter(Options.DiskWriteDelay)
 		go gpq.lazyDiskDeleter()
 	}
 
@@ -88,6 +93,10 @@ func (g *GPQ[d]) ItemsInQueue() uint {
 
 func (g *GPQ[d]) ItemsInDB() uint {
 	return g.diskCache.ItemsInDB()
+}
+
+func (g *GPQ[d]) ActiveBuckets() uint {
+	return g.queue.ActiveBuckets()
 }
 
 // Enqueue adds an item to the GPQ with the given priority and options
@@ -177,8 +186,8 @@ func (g *GPQ[d]) Dequeue() (item schema.Item[d], err error) {
 
 }
 
-func (g *GPQ[d]) DequeueBatch(batch_size uint) (items []schema.Item[d], err error) {
-	i, err := g.queue.DequeueBatch(batch_size)
+func (g *GPQ[d]) DequeueBatch(batchSize uint) (items []schema.Item[d], err error) {
+	i, err := g.queue.DequeueBatch(batchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +218,7 @@ func (g *GPQ[d]) Prioritize() (escalated, removed uint) {
 // Close performs a safe shutdown of the GPQ and the disk cache preventing data loss
 func (g *GPQ[d]) Close() {
 
-	if g.options.LazyDiskCacheEnabled {
+	if g.options.LazyDiskCacheEnabled && g.options.DiskCacheEnabled {
 		close(g.lazyDiskSendChan)
 		close(g.lazyDiskDeleteChan)
 	}
@@ -223,7 +232,7 @@ func (g *GPQ[d]) Close() {
 	}
 }
 
-func (g *GPQ[d]) lazyDiskLoader(maxDelay time.Duration) {
+func (g *GPQ[d]) lazyDiskWriter(maxDelay time.Duration) {
 	g.activeDBSessions.Add(1)
 	defer g.activeDBSessions.Done()
 

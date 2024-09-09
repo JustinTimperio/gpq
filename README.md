@@ -3,7 +3,7 @@
 </p>
 
 <h4 align="center">
-	GPQ is an extremely fast and flexible priority queue, capable of a few million transactions a second when run in RAM and hundreds of thousands of transactions a second when synced to disk. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
+	GPQ is an extremely fast and flexible priority queue, capable of millions transactions a second. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
 </h4>
 
 
@@ -46,10 +46,10 @@ GPQ is a concurrency safe, embeddable priority queue that can be used in a varie
 ## Benchmarks
 Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, Zig, and Go to measure GPQ's performance against the standard implementations of other languages that can be found here at: [pq-bench](https://github.com/JustinTimperio/pq-bench) 
 
-|                                                                                                             |                                                                                                                                                    |
-|-------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| ![Time-Spent](https://github.com/JustinTimperio/pq-bench/blob/master/docs/Time-Spent-vs-Implementation.png) | ![Queue-Speed-WITHOUT-Reprioritize](./docs/Queue-Speed-WITHOUT-Reprioritize.png)                                                                   |
-| ![Queue-Speed-WITH-Reprioritize](./docs/Queue-Speed-WITH-Reprioritize.png)                                  | ![Reprioritize-All-Buckets-Every-100-Milliseconds-VS-No-Reprioritze](./docs/Reprioritize-All-Buckets-Every-100-Milliseconds-VS-No-Reprioritze.png) |
+|                                                                                                             |                                                                                                          |
+|-------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
+| ![Time-Spent](https://github.com/JustinTimperio/pq-bench/blob/master/docs/Time-Spent-vs-Implementation.png) | ![Queue-Speed-WITHOUT-Reprioritize](./docs/Queue-Speed-Without-Prioritize.png)                           |
+| ![Queue-Speed-WITH-Reprioritize](./docs/Queue-Speed-With-Prioritize.png)                                    | ![Average Time to Send and Receive VS Bucket Count](./docs/Time-to-Send-and-Receive-VS-Bucket-Count.png) |
 
 ## Usage
 GPQ at the core is a embeddable priority queue meant to be used at the core of critical workloads that require complex queueing and delivery order guarantees. The best way to use it is just to import it.
@@ -62,46 +62,76 @@ import "github.com/JustinTimperio/gpq"
 For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github.com/cornelk/hashmap) and [BadgerDB](https://github.com/dgraph-io/badger). 
 
 ### API Reference
-- `NewGPQ[d any](NumOfBuckets int) *GPQ[d]` - Creates a new GPQ with n number of buckets 
-  - `EnQueue(data d, priorityBucket int64, escalationRate time.Duration) error` - Adds a piece of data into the queue with a priority and escalation rate 
-   - `DeQueue() (priority int64, data d, err error)` - Retrieves the highest priority item in the queue along with its priority
-   - `Prioritize() (uint64, []error)` - Prioritize stops transactions on each bucket concurrently to shuffle the priorities internally within the bucket depending on the escalation rate given at time of EnQueue'ing
-   - `Peek() (priority int64, data d, err error)` - Retrieves the highest priority item in the queue without removing it
-   - `Len() uint64` - Returns the number of items in the queue
-   - `Close()` - Closes the queue and syncs the queue to disk if enabled
+- `NewGPQ[d any](options schema.GPQOptions) (uint, *GPQ[d], error)` - Creates a new GPQ with the specified options and returns the number of restored items, the GPQ, and an error if one occurred. 
+  - `ItemsInQueue() uint` - Returns the number of items in the queue.
+  - `ItemsInDB() uint` - Returns the number of items in the database.
+  - `ActiveBuckets() uint` - Returns the number of active buckets.
+  - `Enqueue(item schema.Item[d]) error` - Enqueues an item into the queue.
+  - `EnqueueBatch(items []schema.Item[d]) error` - Enqueues a batch of items into the queue.
+  - `Dequeue() (schema.Item[d], error)` - Dequeues an item from the queue.
+  - `DequeueBatch(batchSize uint) ([]schema.Item[d], error)` - Dequeues a batch of items from the queue.
+  - `Prioritize() error` - Prioritizes the queue based on the values in each item.
+  - `Close()` - Closes the queue and saves the queue to disk.
 
 ### Submitting Items to the Queue
 Once you have an initialized queue you can easily submit items like the following:
 ```go
+package main
 
-opts := schema.GPQOptions{
-	NumberOfBatches:       10,
-	DiskCacheEnabled:      true,
-	DiskCachePath:         "/tmp/gpq/queue",
-	DiskCacheCompression:  true,
-	DiskEncryptionEnabled: true,
-	DiskEncryptionKey:     []byte("1234567890"),
-	LazyDiskCacheEnabled:  true,
-	LazyDiskBatchSize:     1000,
-}
+import (
+  "log"
+  "time"
 
-defaultEnqueueOptions := schema.EnqueueOptions{
-  ShouldEscalate: true,
-  EscalationRate: time.Duration(time.Second),
-  CanTimeout:     true,
-  Timeout:        time.Duration(10 * time.Second),
-}
-
-queue := gpq.NewGPQ[int](opts)
-
-var (
-  data int = 1
-  priority int64 = 5
-  options = defaultEnqueueOptions
+  "github.com/JustinTimperio/gpq"
 )
 
-queue.EnQueue(data, priority, options)
+func main() {
+	defaultMessageOptions := schema.EnQueueOptions{
+		ShouldEscalate: true,
+		EscalationRate: time.Duration(time.Second),
+		CanTimeout:     true,
+		Timeout:        time.Duration(time.Second * 1),
+	}
 
+	opts := schema.GPQOptions{
+		MaxPriority: maxBuckets,
+
+		DiskCacheEnabled:      true,
+		DiskCachePath:         "/tmp/gpq",
+		DiskCacheCompression:  true,
+		DiskEncryptionEnabled: true,
+		DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
+		DiskWriteDelay:       time.Duration(time.Second * 5),
+
+		LazyDiskCacheEnabled: true,
+		LazyDiskCacheChannelSize:  1_000_000,
+		LazyDiskBatchSize:    10_000,
+	}
+
+	_, queue, err := gpq.NewGPQ[uint](opts)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	for i := uint(0); i < total; i++ {
+		p := i % maxBuckets
+		item := schema.NewItem(p, i, defaultMessageOptions)
+
+		err := queue.Enqueue(item)
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+
+	for i := uint(0); i < total; i++ {
+		item, err := queue.Dequeue()
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+
+	queue.Close()
+}
 ```
 
 You have a few options when you submit a job such as if the item should escalate over time if not sent, or inversely can timeout if it has been enqueued to long to be relevant anymore.

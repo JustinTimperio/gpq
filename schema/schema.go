@@ -80,12 +80,10 @@ type GPQOptions struct {
 
 	// DiskCacheEnabled is used to enable or disable the disk cache
 	DiskCacheEnabled bool
-	// DiskCacheChannelSize is the length of the channel buffer for the disk cache
-	DiskCacheChannelSize uint
-	// DiskWriteDelay is the delay between writes to disk (used to batch writes)
-	DiskWriteDelay time.Duration
 	// DiskCachePath is the local path to the disk cache directory
 	DiskCachePath string
+	// DiskWriteDelay is the delay between writes to disk (used to batch writes)
+	DiskWriteDelay time.Duration
 	// DiskCacheCompression is used to enable or disable zstd compression on the disk cache
 	DiskCacheCompression bool
 
@@ -93,6 +91,8 @@ type GPQOptions struct {
 	LazyDiskCacheEnabled bool
 	// LazyDiskBatchSize is the number of items to write to disk at once
 	LazyDiskBatchSize uint
+	// LazyDiskCacheChannelSize is the length of the channel buffer for the disk cache
+	LazyDiskCacheChannelSize uint
 
 	// DiskEncryptionEnabled is used to enable or disable disk encryption
 	DiskEncryptionEnabled bool

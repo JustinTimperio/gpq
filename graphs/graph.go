@@ -2,14 +2,12 @@ package main
 
 import (
 	"encoding/csv"
-	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"runtime"
 	"strconv"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/JustinTimperio/gpq"
@@ -17,32 +15,31 @@ import (
 )
 
 var (
-	maxTotal              int  = 10000000
-	print                 bool = false
-	retries               int  = 5
-	nMaxBuckets           int  = 100
-	lazy                  bool = true
-	defaultMessageOptions      = schema.EnQueueOptions{
+	maxTotal              int = 10000000
+	nMaxBuckets           int = 100
+	defaultMessageOptions     = schema.EnQueueOptions{
 		ShouldEscalate: true,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     true,
-		Timeout:        time.Duration(time.Second * 10),
+		Timeout:        time.Duration(time.Second * 5),
 	}
 )
 
 func main() {
-
 	// Setup the pprof server if you want to profile
 	go func() {
 		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
-	iter(true)
-	iter(false)
+	var lazy = false
+	var disk = false
+
+	iter(true, disk, lazy)
+	iter(false, disk, lazy)
 
 }
 
-func iter(prioritize bool) {
+func iter(prioritize bool, disk, lazy bool) {
 
 	var name = "bench-report-no-repro.csv"
 	if prioritize {
@@ -62,7 +59,7 @@ func iter(prioritize bool) {
 	defer writer.Flush()
 
 	// Write the header row to the CSV file
-	header := []string{"Total", "nBuckets", "Sent", "Received", "Duration", "Reprioritized"}
+	header := []string{"Total Items", "Buckets", "Removed", "Escalated", "Time Elapsed", "Time to Send", "Time to Receive"}
 	writer.Write(header)
 
 	// Test the bench function for each million entries up to maxTotal
@@ -71,39 +68,38 @@ func iter(prioritize bool) {
 		for buckets := 5; buckets <= nMaxBuckets; buckets += 5 {
 			log.Println("Starting test for", total, "entries and", buckets, "buckets")
 
-			// Reset the sent, received, and reprioritized counters
-			var sent uint64
-			var received uint64
-			var reprioritized uint64
-
 			// Run the bench function
-			t := bench(total, prioritize, print, buckets, &sent, &received, &reprioritized, lazy)
+			totalElapsed, sent, received, removed, escalated := bench(total, buckets, prioritize, disk, lazy)
+			runtime.GC()
 
 			// Write the statistics to the CSV file
 			stats := []string{
 				strconv.Itoa(total),
 				strconv.Itoa(buckets),
-				strconv.FormatUint(sent, 10),
-				strconv.FormatUint(received, 10),
-				t,
-				strconv.FormatUint(reprioritized, 10),
+				strconv.Itoa(int(removed)),
+				strconv.Itoa(int(escalated)),
+				strconv.FormatFloat(totalElapsed.Seconds(), 'f', 6, 64),
+				strconv.FormatFloat(sent.Seconds(), 'f', 6, 64),
+				strconv.FormatFloat(received.Seconds(), 'f', 6, 64),
 			}
 			writer.Write(stats)
 		}
 	}
 }
 
-func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, received *uint64, reprioritized *uint64, lazy bool) string {
+func bench(total int, buckets int, prioritize bool, disk bool, lazy bool) (totalElapsed time.Duration, sentElapsed time.Duration, receivedElapsed time.Duration, removed uint64, escalated uint64) {
 
 	opts := schema.GPQOptions{
-		MaxPriority:           nBuckets,
-		DiskCacheEnabled:      true,
-		DiskCachePath:         "/tmp/gpq/test",
-		DiskCacheCompression:  false,
-		DiskEncryptionEnabled: false,
-		DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
-		LazyDiskCacheEnabled:  lazy,
-		LazyDiskBatchSize:     1000,
+		MaxPriority:              uint(buckets),
+		DiskCacheEnabled:         disk,
+		DiskCachePath:            "/tmp/gpq/graphs",
+		DiskCacheCompression:     false,
+		DiskEncryptionEnabled:    false,
+		DiskEncryptionKey:        []byte("12345678901234567890123456789012"),
+		LazyDiskCacheEnabled:     lazy,
+		LazyDiskBatchSize:        10_000,
+		LazyDiskCacheChannelSize: uint(total),
+		DiskWriteDelay:           time.Duration(5 * time.Second),
 	}
 
 	// Create a new GPQ with a h-heap width of 100 using the TestStruct as the data type
@@ -117,89 +113,45 @@ func bench(total int, prioritize bool, print bool, nBuckets int, sent *uint64, r
 	if prioritize {
 		go func() {
 			for {
-				timedOut, prioritized, err := queue.Prioritize()
-				time.Sleep(100 * time.Millisecond)
-				if print {
-					log.Println("Prioritized:", prioritized, "Timeouts", timedOut, "No items to prioritize in", len(err), "buckets")
-				}
-
-				if err != nil {
-					continue
-				}
-				atomic.AddUint64(reprioritized, uint64(prioritized))
+				time.Sleep(1 * time.Second)
+				timedOut, prioritized := queue.Prioritize()
+				escalated += uint64(prioritized)
+				removed += uint64(timedOut)
 			}
 		}()
 	}
 
-	wg := &sync.WaitGroup{}
-
-	wg.Add(10)
 	timer := time.Now()
-	for i := 0; i < 10; i++ {
-		go func() {
-			defer wg.Done()
-			for i := 0; i < total/10; i++ {
-				p := i % nBuckets
-				timer := time.Now()
-				err := queue.Enqueue(
-					i,
-					int64(p),
-					defaultMessageOptions,
-				)
-				if err != nil {
-					log.Fatalln(err)
-				}
-				if print {
-					log.Println("EnQueue", p, time.Since(timer))
-				}
-				atomic.AddUint64(sent, 1)
-			}
-		}()
-	}
-
-	var missed int64
-	var hits int64
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		var lastPriority int64
-
-		for i := 0; i < retries; i++ {
-			for total > int(*received) {
-				timer := time.Now()
-				priority, item, err := queue.Dequeue()
-				if err != nil {
-					lastPriority = 0
-					continue
-				}
-				i = retries
-
-				atomic.AddUint64(received, 1)
-
-				if print {
-					log.Println("DeQueue", priority, received, item, time.Since(timer))
-				}
-
-				if lastPriority > priority {
-					atomic.AddInt64(&missed, 1)
-				} else {
-					atomic.AddInt64(&hits, 1)
-				}
-				lastPriority = priority
-			}
-
-			time.Sleep(10 * time.Millisecond)
+	for i := 0; i < total; i++ {
+		p := i % buckets
+		item := schema.NewItem(uint(p), i, defaultMessageOptions)
+		err := queue.Enqueue(item)
+		if err != nil {
+			log.Fatalln(err)
 		}
-	}()
+	}
+	sendTime := time.Since(timer)
 
-	wg.Wait()
-
-	log.Println("Sent", *sent, "Received", *received, "Finished in", time.Since(timer), "Missed", missed, "Hits", hits, "Reprioritized", *reprioritized)
+	timer = time.Now()
+	breaker := 0
+	for i := 0; i < total; i++ {
+		_, err := queue.Dequeue()
+		if err != nil {
+			if breaker > 1000 {
+				log.Println("Length of queue:", queue.ItemsInQueue())
+				log.Panicln("An error occurred while dequeuing:", err, "at index", i, "of", total, "with total removed", removed)
+			}
+			if removed+uint64(i) == uint64(total) {
+				break
+			}
+			breaker++
+			i--
+		}
+	}
+	receiveTime := time.Since(timer)
 
 	// Wait for all db sessions to sync to disk
 	queue.Close()
-	return fmt.Sprintf("%d", time.Since(timer).Milliseconds())
+	return sendTime + receiveTime, sendTime, receiveTime, removed, escalated
 
 }

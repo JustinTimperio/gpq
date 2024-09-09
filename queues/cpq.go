@@ -94,25 +94,33 @@ func (cpq *CorePriorityQueue[T]) Dequeue() (*schema.Item[T], error) {
 	cpq.mux.Lock()
 	defer cpq.mux.Unlock()
 
-	priority, ok := cpq.bpq.Min()
-	if !ok {
-		return nil, errors.New("Core Priority Queue Error: No items found in the queue")
-	}
+	var item *schema.Item[T]
+	for {
+		priority, ok := cpq.bpq.Min()
+		if !ok {
+			return nil, errors.New("Core Priority Queue Error: No items found in the queue")
+		}
 
-	bucket, ok := cpq.buckets.Get(priority)
-	if !ok {
-		return nil, errors.New("Core Priority Queue Error: Priority not found")
-	}
+		bucket, ok := cpq.buckets.Get(priority)
+		if !ok {
+			return nil, errors.New("Core Priority Queue Error: Priority not found")
+		}
 
-	item, err := gheap.Dequeue[T](bucket)
-	if err != nil {
-		return nil, err
+		var err error
+		item, err = gheap.Dequeue[T](bucket)
+		if err != nil {
+			if bucket.Len() == 0 {
+				cpq.bpq.Delete(priority)
+			} else {
+				return nil, err
+			}
+		} else {
+			break
+		}
+
 	}
 
 	cpq.itemsInQueue--
-	if bucket.Len() == 0 {
-		cpq.bpq.Delete(priority)
-	}
 
 	return item, nil
 }
@@ -190,7 +198,14 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint) {
 				currentIndex++
 			}
 		}
+		return true
+	})
 
+	// Iterate through the buckets and remove empty buckets
+	cpq.buckets.Range(func(key uint, bucket *priorityQueue[T]) bool {
+		if bucket.Len() == 0 {
+			cpq.bpq.Delete(key)
+		}
 		return true
 	})
 

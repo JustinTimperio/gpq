@@ -13,6 +13,7 @@ import (
 
 	"github.com/JustinTimperio/gpq"
 	"github.com/JustinTimperio/gpq/schema"
+
 	"github.com/dgraph-io/badger/v4"
 )
 
@@ -34,12 +35,12 @@ func TestOrder(t *testing.T) {
 	opts := schema.GPQOptions{
 		MaxPriority: maxBuckets,
 
-		DiskCacheEnabled:      syncToDisk,
-		DiskCachePath:         "/tmp/gpq/test-single",
-		DiskCacheCompression:  false,
-		DiskEncryptionEnabled: false,
-		DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
-		DiskCacheChannelSize:  1_000_000,
+		DiskCacheEnabled:         syncToDisk,
+		DiskCachePath:            "/tmp/gpq/test-order",
+		DiskCacheCompression:     false,
+		DiskEncryptionEnabled:    false,
+		DiskEncryptionKey:        []byte("1234567890"),
+		LazyDiskCacheChannelSize: 1_000_000,
 
 		DiskWriteDelay:       time.Duration(time.Second),
 		LazyDiskCacheEnabled: lazySync,
@@ -103,12 +104,12 @@ func TestPrioritize(t *testing.T) {
 	opts := schema.GPQOptions{
 		MaxPriority: maxBuckets,
 
-		DiskCacheEnabled:      syncToDisk,
-		DiskCachePath:         "/tmp/gpq/test-single",
-		DiskCacheCompression:  false,
-		DiskEncryptionEnabled: false,
-		DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
-		DiskCacheChannelSize:  1_000_000,
+		DiskCacheEnabled:         syncToDisk,
+		DiskCachePath:            "/tmp/gpq/test-prioritize",
+		DiskCacheCompression:     false,
+		DiskEncryptionEnabled:    false,
+		DiskEncryptionKey:        []byte("12345678901234567890123456789012"),
+		LazyDiskCacheChannelSize: 1_000_000,
 
 		DiskWriteDelay:       time.Duration(time.Second),
 		LazyDiskCacheEnabled: lazySync,
@@ -214,12 +215,12 @@ func TestBatchParallel(t *testing.T) {
 	opts := schema.GPQOptions{
 		MaxPriority: maxBuckets,
 
-		DiskCacheEnabled:      syncToDisk,
-		DiskCachePath:         "/tmp/gpq/batch-parallel",
-		DiskCacheCompression:  false,
-		DiskEncryptionEnabled: false,
-		DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
-		DiskCacheChannelSize:  1_000_000,
+		DiskCacheEnabled:         syncToDisk,
+		DiskCachePath:            "/tmp/gpq/batch-parallel",
+		DiskCacheCompression:     false,
+		DiskEncryptionEnabled:    false,
+		DiskEncryptionKey:        []byte("12345678901234567890123456789012"),
+		LazyDiskCacheChannelSize: 1_000_000,
 
 		DiskWriteDelay:       time.Duration(time.Second),
 		LazyDiskCacheEnabled: lazySync,
@@ -303,12 +304,12 @@ func TestE2EParallel(t *testing.T) {
 	opts := schema.GPQOptions{
 		MaxPriority: maxBuckets,
 
-		DiskCacheEnabled:      syncToDisk,
-		DiskCachePath:         "/tmp/gpq/batch-e2e-parallel",
-		DiskCacheCompression:  false,
-		DiskEncryptionEnabled: false,
-		DiskEncryptionKey:     []byte("12345678901234567890123456789012"),
-		DiskCacheChannelSize:  1_000_000,
+		DiskCacheEnabled:         syncToDisk,
+		DiskCachePath:            "/tmp/gpq/batch-e2e-parallel",
+		DiskCacheCompression:     false,
+		DiskEncryptionEnabled:    false,
+		DiskEncryptionKey:        []byte("12345678901234567890123456789012"),
+		LazyDiskCacheChannelSize: 1_000_000,
 
 		DiskWriteDelay:       time.Duration(time.Second * 5),
 		LazyDiskCacheEnabled: lazySync,
