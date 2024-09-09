@@ -63,14 +63,6 @@ func (i *Item[d]) FromBytes(data []byte) error {
 	return nil
 }
 
-// Internal use only
-type LazyMessageQueueItem struct {
-	ID               []byte
-	Data             []byte
-	TransactionBatch uint
-	WasRestored      bool
-}
-
 // GPQOptions is used to configure the GPQ
 type GPQOptions struct {
 	// Logger provides a custom logger interface for the Badger cache
