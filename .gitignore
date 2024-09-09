@@ -1,5 +1,4 @@
 .history/*
 profile.mutex
 profile.pprof
-bench/rust/target/*
-bench/c++/a.out
+bench/
