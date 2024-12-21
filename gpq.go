@@ -198,16 +198,16 @@ func (g *GPQ[d]) EnqueueBatch(items []schema.Item[d]) []error {
 }
 
 // Dequeue removes and returns the item with the highest priority in the queue
-func (g *GPQ[d]) Dequeue() (item schema.Item[d], err error) {
-	i, err := g.queue.Dequeue()
+func (g *GPQ[d]) Dequeue() (item *schema.Item[d], err error) {
+	item, err = g.queue.Dequeue()
 	if err != nil {
 		return item, err
 	}
-	item = *i
 
 	if g.options.DiskCacheEnabled {
 		if g.options.LazyDiskCacheEnabled {
-			g.lazyDiskDeleteChan <- item
+			// TODO: this is stupid and we only need uuid + batch num
+			g.lazyDiskDeleteChan <- *item
 		} else {
 			err = g.diskCache.DeleteSingle(item.DiskUUID)
 			if err != nil {

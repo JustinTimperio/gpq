@@ -39,7 +39,7 @@ GPQ is a concurrency safe, embeddable priority queue that can be used in a varie
 ### Sister Projects
 - [fibheap (Fibonacci Heaps)](https://github.com/JustinTimperio/fibheap)
 - [rpq (Rust Priority Queue)](https://github.com/JustinTimperio/rpq)
-- [gpq-server (GPQ Server)](https://github.com/JustinTimperio/gpq/v1-server)
+- [gpq-server (GPQ Server)](https://github.com/JustinTimperio/gpq-server)
 - [pq-bench (Priority Queue Benchmarks)](https://github.com/JustinTimperio/pq-bench)
 
 
@@ -68,8 +68,8 @@ For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github
   - `ActiveBuckets() uint` - Returns the number of active buckets.
   - `Enqueue(item schema.Item[d]) error` - Enqueues an item into the queue.
   - `EnqueueBatch(items []schema.Item[d]) error` - Enqueues a batch of items into the queue.
-  - `Dequeue() (schema.Item[d], error)` - Dequeues an item from the queue.
-  - `DequeueBatch(batchSize uint) ([]schema.Item[d], error)` - Dequeues a batch of items from the queue.
+  - `Dequeue() (*schema.Item[d], error)` - Dequeues an item from the queue.
+  - `DequeueBatch(batchSize uint) ([]*schema.Item[d], error)` - Dequeues a batch of items from the queue.
   - `Prioritize() error` - Prioritizes the queue based on the values in each item.
   - `Close()` - Closes the queue and saves the queue to disk.
 
@@ -158,7 +158,7 @@ We use github to host code, to track issues and feature requests, as well as acc
 ### Any contributions you make will be under the MIT Software License
 In short, when you submit code changes, your submissions are understood to be under the same [MIT License](http://choosealicense.com/licenses/mit/) that covers the project. Feel free to contact the maintainers if that's a concern.
 
-### Report bugs using Github's [Issues](https://github.com/JustinTimperio/gpq/v1/issues)
+### Report bugs using Github's [Issues](https://github.com/JustinTimperio/gpq/issues)
 We use GitHub issues to track public bugs. Report a bug by opening a new issue; it's that easy!
 
 ### Write bug reports with detail, background, and sample code
