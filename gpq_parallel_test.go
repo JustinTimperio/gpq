@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JustinTimperio/gpq/v1"
-	"github.com/JustinTimperio/gpq/v1/schema"
+	"github.com/JustinTimperio/gpq"
+	"github.com/JustinTimperio/gpq/schema"
 )
 
 // Tests pushing and pulling single messages in parallel

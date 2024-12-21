@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JustinTimperio/gpq/v1"
-	"github.com/JustinTimperio/gpq/v1/schema"
+	"github.com/JustinTimperio/gpq"
+	"github.com/JustinTimperio/gpq/schema"
 )
 
 func TestE2E(t *testing.T) {

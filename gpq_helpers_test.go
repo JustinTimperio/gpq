@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/JustinTimperio/gpq/v1/schema"
+	"github.com/JustinTimperio/gpq/schema"
 	"github.com/dgraph-io/badger/v4"
 )
 

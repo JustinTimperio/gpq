@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JustinTimperio/gpq/v1/disk"
-	"github.com/JustinTimperio/gpq/v1/ftime"
-	"github.com/JustinTimperio/gpq/v1/queues"
-	"github.com/JustinTimperio/gpq/v1/schema"
+	"github.com/JustinTimperio/gpq/disk"
+	"github.com/JustinTimperio/gpq/ftime"
+	"github.com/JustinTimperio/gpq/queues"
+	"github.com/JustinTimperio/gpq/schema"
 
 	"github.com/google/uuid"
 )

@@ -55,7 +55,7 @@ Due to the fact that most operations are done in constant time `O(1)` or logarit
 GPQ at the core is a embeddable priority queue meant to be used at the core of critical workloads that require complex queueing and delivery order guarantees. The best way to use it is just to import it.
 
 ```go
-import "github.com/JustinTimperio/gpq/v1"
+import "github.com/JustinTimperio/gpq"
 ```
 
 ### Prerequisites 
@@ -82,7 +82,7 @@ import (
   "log"
   "time"
 
-  "github.com/JustinTimperio/gpq/v1"
+  "github.com/JustinTimperio/gpq"
 )
 
 func main() {

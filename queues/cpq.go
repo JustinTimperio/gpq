@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/JustinTimperio/gpq/v1/disk"
-	"github.com/JustinTimperio/gpq/v1/ftime"
-	"github.com/JustinTimperio/gpq/v1/queues/gheap"
-	"github.com/JustinTimperio/gpq/v1/schema"
+	"github.com/JustinTimperio/gpq/disk"
+	"github.com/JustinTimperio/gpq/ftime"
+	"github.com/JustinTimperio/gpq/queues/gheap"
+	"github.com/JustinTimperio/gpq/schema"
 
 	"github.com/cornelk/hashmap"
 	"github.com/tidwall/btree"

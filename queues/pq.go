@@ -3,8 +3,8 @@ package queues
 import (
 	"errors"
 
-	"github.com/JustinTimperio/gpq/v1/queues/gheap"
-	"github.com/JustinTimperio/gpq/v1/schema"
+	"github.com/JustinTimperio/gpq/queues/gheap"
+	"github.com/JustinTimperio/gpq/schema"
 )
 
 // NewCorePriorityQueue creates a new CorePriorityQueue

@@ -3,7 +3,7 @@ package disk
 import (
 	"errors"
 
-	"github.com/JustinTimperio/gpq/v1/schema"
+	"github.com/JustinTimperio/gpq/schema"
 
 	"github.com/dgraph-io/badger/v4"
 	bOptions "github.com/dgraph-io/badger/v4/options"
