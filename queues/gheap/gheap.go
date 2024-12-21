@@ -15,7 +15,7 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/v1/schema"
 )
 
 // The Interface type describes the requirements

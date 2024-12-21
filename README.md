@@ -39,7 +39,7 @@ GPQ is a concurrency safe, embeddable priority queue that can be used in a varie
 ### Sister Projects
 - [fibheap (Fibonacci Heaps)](https://github.com/JustinTimperio/fibheap)
 - [rpq (Rust Priority Queue)](https://github.com/JustinTimperio/rpq)
-- [gpq-server (GPQ Server)](https://github.com/JustinTimperio/gpq-server)
+- [gpq-server (GPQ Server)](https://github.com/JustinTimperio/gpq/v1-server)
 - [pq-bench (Priority Queue Benchmarks)](https://github.com/JustinTimperio/pq-bench)
 
 
@@ -55,7 +55,7 @@ Due to the fact that most operations are done in constant time `O(1)` or logarit
 GPQ at the core is a embeddable priority queue meant to be used at the core of critical workloads that require complex queueing and delivery order guarantees. The best way to use it is just to import it.
 
 ```go
-import "github.com/JustinTimperio/gpq"
+import "github.com/JustinTimperio/gpq/v1"
 ```
 
 ### Prerequisites 
@@ -82,7 +82,7 @@ import (
   "log"
   "time"
 
-  "github.com/JustinTimperio/gpq"
+  "github.com/JustinTimperio/gpq/v1"
 )
 
 func main() {
@@ -158,7 +158,7 @@ We use github to host code, to track issues and feature requests, as well as acc
 ### Any contributions you make will be under the MIT Software License
 In short, when you submit code changes, your submissions are understood to be under the same [MIT License](http://choosealicense.com/licenses/mit/) that covers the project. Feel free to contact the maintainers if that's a concern.
 
-### Report bugs using Github's [Issues](https://github.com/JustinTimperio/gpq/issues)
+### Report bugs using Github's [Issues](https://github.com/JustinTimperio/gpq/v1/issues)
 We use GitHub issues to track public bugs. Report a bug by opening a new issue; it's that easy!
 
 ### Write bug reports with detail, background, and sample code

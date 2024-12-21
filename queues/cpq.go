@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/JustinTimperio/gpq/disk"
-	"github.com/JustinTimperio/gpq/ftime"
-	"github.com/JustinTimperio/gpq/queues/gheap"
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/v1/disk"
+	"github.com/JustinTimperio/gpq/v1/ftime"
+	"github.com/JustinTimperio/gpq/v1/queues/gheap"
+	"github.com/JustinTimperio/gpq/v1/schema"
 
 	"github.com/cornelk/hashmap"
 	"github.com/tidwall/btree"
@@ -71,22 +71,25 @@ func (cpq *CorePriorityQueue[T]) Enqueue(data *schema.Item[T]) error {
 	return nil
 }
 
-func (cpq *CorePriorityQueue[T]) EnqueueBatch(data *[]schema.Item[T]) error {
+func (cpq *CorePriorityQueue[T]) EnqueueBatch(data []*schema.Item[T]) []error {
 	cpq.mux.Lock()
 	defer cpq.mux.Unlock()
 
-	for _, item := range *data {
+	var errors []error
+
+	for _, item := range data {
 		bucket, ok := cpq.buckets.Get(item.Priority)
 		if !ok {
-			return fmt.Errorf("Core Priority Queue Error: Priority %d not found", item.Priority)
+			errors = append(errors, fmt.Errorf("Core Priority Queue Error: No bucket found with priority %d", item.Priority))
+			continue
 		}
 
 		cpq.bpq.Insert(item.Priority)
-		gheap.Enqueue[T](bucket, &item)
+		gheap.Enqueue[T](bucket, item)
 		cpq.itemsInQueue++
 	}
 
-	return nil
+	return errors
 
 }
 
@@ -125,15 +128,15 @@ func (cpq *CorePriorityQueue[T]) Dequeue() (*schema.Item[T], error) {
 	return item, nil
 }
 
-func (cpq *CorePriorityQueue[T]) DequeueBatch(batchSize uint) (*[]schema.Item[T], error) {
+func (cpq *CorePriorityQueue[T]) DequeueBatch(batchSize uint) ([]*schema.Item[T], []error) {
 	cpq.mux.Lock()
 	defer cpq.mux.Unlock()
 
 	if cpq.bpq.Len() == 0 {
-		return nil, errors.New("Core Priority Queue Error: No items found in the queue")
+		return nil, []error{errors.New("Core Priority Queue Error: No items found in the queue")}
 	}
 
-	batch := make([]schema.Item[T], 0, batchSize)
+	batch := make([]*schema.Item[T], 0, batchSize)
 	for i := 0; i < int(batchSize); i++ {
 		priority, ok := cpq.bpq.Min()
 		if !ok {
@@ -142,22 +145,23 @@ func (cpq *CorePriorityQueue[T]) DequeueBatch(batchSize uint) (*[]schema.Item[T]
 
 		bucket, ok := cpq.buckets.Get(priority)
 		if !ok {
-			return nil, errors.New("Core Priority Queue Error: Priority not found")
+			return batch, []error{errors.New("Core Priority Queue Error: Internal error, priority not found")}
 		}
 
 		item, err := gheap.Dequeue[T](bucket)
 		if err != nil {
-			return nil, err
+			// Only error that can return is an empty queue error
+			break
 		}
 
 		cpq.itemsInQueue--
-		batch = append(batch, *item)
+		batch = append(batch, item)
 		if bucket.Len() == 0 {
 			cpq.bpq.Delete(priority)
 		}
 	}
 
-	return &batch, nil
+	return batch, nil
 }
 
 func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err error) {
@@ -214,7 +218,13 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err
 		return removed, escalated, err
 	}
 
-	// Iterate through the bucket and escalate items that have been waiting too long
+	// This is a very basic but fast algorithm that iterates from the front to the back of the queue.
+	// We start by defining a flag for if the last item was "escalated"
+	// If the item can escalate and has reached its ticker, then we check if the last item was escalated,
+	// and that we are not first in the queue. This strategy means that messages can only push up the queue,
+	// if other messages are also not being prioritized. In this model, messages not being escalated,
+	// can be impacted by other high priority messages allowing for fairly complex queue strategies.
+	// I think in the future this can allow for more advanced features but seems fine for now.
 	cpq.buckets.Range(func(key uint, bucket *priorityQueue[T]) bool {
 		var lastItemWasEscalated bool
 		var len = bucket.Len()
@@ -226,14 +236,14 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err
 				currentTime := ftime.Now()
 				if currentTime.Sub(item.LastEscalated) > item.EscalationRate {
 
-					if !lastItemWasEscalated && i > 0 {
+					if !lastItemWasEscalated && i != 0 {
 						item.LastEscalated = currentTime
 						bucket.UpdatePriority(item, i-1)
 						escalated++
 					}
 					// We don't need to update lastItemWasEscalated here because we just swapped
-					// the current cursor index with cursor index - 1. The previous index must have
-					// not been escalated so we don't need to update last_pos_was_escalated
+					// the current cursor index, with cursor index - 1. The previous index must have
+					// not been escalated so we don't need to update lastItemWasEscalated
 				}
 			} else {
 				lastItemWasEscalated = false

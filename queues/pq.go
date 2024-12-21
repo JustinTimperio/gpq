@@ -3,8 +3,8 @@ package queues
 import (
 	"errors"
 
-	"github.com/JustinTimperio/gpq/queues/gheap"
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/v1/queues/gheap"
+	"github.com/JustinTimperio/gpq/v1/schema"
 )
 
 // NewCorePriorityQueue creates a new CorePriorityQueue
@@ -44,7 +44,6 @@ func (pq *priorityQueue[T]) Swap(i, j int) {
 
 // EnQueue adds an item to the end of the heap
 func (pq *priorityQueue[T]) Enqueue(data *schema.Item[T]) {
-
 	n := len(pq.items)
 	data.InternalPriority = n
 	item := data
@@ -54,7 +53,6 @@ func (pq *priorityQueue[T]) Enqueue(data *schema.Item[T]) {
 
 // DeQueue removes the first item from the heap
 func (pq *priorityQueue[T]) Dequeue() (data *schema.Item[T], err error) {
-
 	if len(pq.items) == 0 {
 		return data, errors.New("Internal Priority Queue Error: No items found in the queue")
 	}

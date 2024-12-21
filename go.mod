@@ -1,4 +1,4 @@
-module github.com/JustinTimperio/gpq
+module github.com/JustinTimperio/gpq/v1
 
 go 1.22.0
 

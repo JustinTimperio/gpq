@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/JustinTimperio/gpq"
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/v1"
+	"github.com/JustinTimperio/gpq/v1/schema"
 )
 
 var (

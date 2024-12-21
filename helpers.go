@@ -3,8 +3,8 @@ package gpq
 import (
 	"sync"
 
-	"github.com/JustinTimperio/gpq/disk"
-	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/v1/disk"
+	"github.com/JustinTimperio/gpq/v1/schema"
 )
 
 type BatchHandler[T any] struct {
