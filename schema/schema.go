@@ -28,7 +28,8 @@ type Item[d any] struct {
 	WasRestored      bool
 }
 
-func NewItem[d any](priority uint, data d, options EnQueueOptions) Item[d] {
+// NewItem creates a new item using the options provide and data stored in a generic
+func NewItem[d any](priority uint, data d, options EnqueueOptions) Item[d] {
 	return Item[d]{
 		Priority:       priority,
 		Data:           data,
@@ -40,6 +41,7 @@ func NewItem[d any](priority uint, data d, options EnQueueOptions) Item[d] {
 	}
 }
 
+// ToBytes converts a item into a blob
 func (i *Item[d]) ToBytes() ([]byte, error) {
 	// Encode the item to a byte slice
 	var buf bytes.Buffer
@@ -52,6 +54,7 @@ func (i *Item[d]) ToBytes() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// FromBytes converts a blob to a item
 func (i *Item[d]) FromBytes(data []byte) error {
 	// Decode the item from a byte slice
 	dec := gob.NewDecoder(bytes.NewReader(data))
@@ -92,8 +95,8 @@ type GPQOptions struct {
 	DiskEncryptionKey []byte
 }
 
-// EnQueueOptions is used to configure the EnQueue method
-type EnQueueOptions struct {
+// EnqueueOptions is used to configure the EnQueue method
+type EnqueueOptions struct {
 	// ShouldEscalate is used to determine if the item should be escalated
 	ShouldEscalate bool
 	// EscalationRate is the time to wait before escalating the item (happens every duration)
@@ -102,4 +105,11 @@ type EnQueueOptions struct {
 	CanTimeout bool
 	// Timeout is the time to wait before timing out the item
 	Timeout time.Duration
+}
+
+// Used internally to delete entries on the lazy disk chan
+type DeleteMessage struct {
+	BatchNumber uint
+	DiskUUID    []byte
+	WasRestored bool
 }

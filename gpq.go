@@ -33,7 +33,7 @@ type GPQ[d any] struct {
 	// lazyDiskMessageChan is a channel used to send messages to the lazy disk cache
 	lazyDiskSendChan chan schema.Item[d]
 	// lazyDiskDeleteChan is a channel used to send messages to the lazy disk cache
-	lazyDiskDeleteChan chan schema.Item[d]
+	lazyDiskDeleteChan chan schema.DeleteMessage
 	// batchHandler allows for synchronization of disk cache batches
 	batchHandler *BatchHandler[d]
 	// batchCounter is used to keep track the current batch number
@@ -49,7 +49,7 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 	var diskCache *disk.Disk[d]
 	var err error
 	var sender chan schema.Item[d]
-	var receiver chan schema.Item[d]
+	var receiver chan schema.DeleteMessage
 
 	if Options.DiskCacheEnabled {
 		diskCache, err = disk.NewDiskCache[d](nil, Options)
@@ -59,7 +59,7 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 
 		if Options.LazyDiskCacheEnabled {
 			sender = make(chan schema.Item[d], Options.LazyDiskCacheChannelSize)
-			receiver = make(chan schema.Item[d], Options.LazyDiskCacheChannelSize)
+			receiver = make(chan schema.DeleteMessage, Options.LazyDiskCacheChannelSize)
 		}
 	}
 
@@ -76,30 +76,55 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 		batchCounter:       NewBatchCounter(Options.LazyDiskBatchSize),
 	}
 
-	if Options.LazyDiskCacheEnabled && Options.DiskCacheEnabled {
-		go gpq.lazyDiskWriter(Options.DiskWriteDelay)
-		go gpq.lazyDiskDeleter()
-	}
-
 	var restored uint
+	if Options.DiskCacheEnabled {
+		items, err := gpq.diskCache.RestoreFromDisk()
+		if err != nil {
+			return 0, gpq, err
+		}
+
+		errs := gpq.restoreDB(items)
+		if errs != nil {
+			return 0, gpq, fmt.Errorf("Failed to Restore DB, received %d errors! Errors: %v", len(errs), errs)
+		}
+		restored = uint(len(items))
+
+		if Options.LazyDiskCacheEnabled {
+			go gpq.lazyDiskWriter(Options.DiskWriteDelay)
+			go gpq.lazyDiskDeleter()
+		}
+	}
 
 	return restored, gpq, nil
 }
 
-// Len returns the number of items in the GPQ across all buckets
+// ItemsInQueue returns the total number of items in the queue
 func (g *GPQ[d]) ItemsInQueue() uint {
 	return g.queue.ItemsInQueue()
 }
 
+// ItemsInDB returns the total number of items currently commit to disk
 func (g *GPQ[d]) ItemsInDB() uint {
 	return g.diskCache.ItemsInDB()
 }
 
+// ActiveBuckets returns the total number of buckets(priorities) that have messages within
 func (g *GPQ[d]) ActiveBuckets() uint {
 	return g.queue.ActiveBuckets()
 }
 
-// Enqueue adds an item to the GPQ with the given priority and options
+func (g *GPQ[d]) restoreDB(items []*schema.Item[d]) []error {
+	// Quick sanity check
+	for i := 0; i < len(items); i++ {
+		if items[i].Priority > uint(g.options.MaxPriority) {
+			return []error{fmt.Errorf("You are trying to restore items with priorities higher than the max allowed for this queue")}
+		}
+	}
+
+	return g.queue.EnqueueBatch(items)
+}
+
+// Enqueue adds an item to the queue with the given options
 func (g *GPQ[d]) Enqueue(item schema.Item[d]) error {
 
 	if item.Priority > uint(g.options.MaxPriority) {
@@ -129,51 +154,66 @@ func (g *GPQ[d]) Enqueue(item schema.Item[d]) error {
 	return g.queue.Enqueue(&item)
 }
 
-func (g *GPQ[d]) EnqueueBatch(items []schema.Item[d]) error {
+// EnqueueBatch takes a slice of items and attempts to enqueue them in their perspective buckets
+// If a error is generated, it is attached to a slice of errors. Currently the batch will be commit
+// in the partial state, and it is up to the user to parse the errors and resend messages that failed.
+// In the future this will most likely change with the addition of transactions.
+func (g *GPQ[d]) EnqueueBatch(items []schema.Item[d]) []error {
+
+	var (
+		errors         []error
+		processedItems []*schema.Item[d]
+	)
 
 	for i := 0; i < len(items); i++ {
 		if items[i].Priority > uint(g.options.MaxPriority) {
-			return fmt.Errorf("Priority bucket does not exist: %d", items[i].Priority)
+			errors = append(errors, fmt.Errorf("No Bucket exists to place message %d with priority %d", i, items[i].Priority))
+			continue
 		}
-	}
 
-	if g.options.DiskCacheEnabled {
-		for i := 0; i < len(items); i++ {
+		if g.options.DiskCacheEnabled {
 			key, err := uuid.New().MarshalBinary()
 			if err != nil {
-				return err
+				errors = append(errors, fmt.Errorf("Unable to generate UUID for message %d with priority %d", i, items[i].Priority))
+				continue
 			}
 			items[i].DiskUUID = key
-		}
 
-		if g.options.LazyDiskCacheEnabled {
-			items[0].BatchNumber = g.batchCounter.Increment()
-			for i := 0; i < len(items); i++ {
+			if g.options.LazyDiskCacheEnabled {
+				items[i].BatchNumber = g.batchCounter.Increment()
 				g.lazyDiskSendChan <- items[i]
-			}
-		} else {
-			for i := 0; i < len(items); i++ {
-				err := g.diskCache.WriteSingle(items[i].DiskUUID, items[i])
+			} else {
+				err = g.diskCache.WriteSingle(items[i].DiskUUID, items[i])
 				if err != nil {
-					return err
+					errors = append(errors, fmt.Errorf("Unable to write message %d with priority %d", i, items[i].Priority))
+					continue
 				}
 			}
 		}
+
+		processedItems = append(processedItems, &items[i])
 	}
 
-	return g.queue.EnqueueBatch(&items)
+	return g.queue.EnqueueBatch(processedItems)
 }
 
-func (g *GPQ[d]) Dequeue() (item schema.Item[d], err error) {
-	i, err := g.queue.Dequeue()
+// Dequeue removes and returns the item with the highest priority in the queue
+func (g *GPQ[d]) Dequeue() (item *schema.Item[d], err error) {
+	item, err = g.queue.Dequeue()
 	if err != nil {
 		return item, err
 	}
-	item = *i
 
 	if g.options.DiskCacheEnabled {
 		if g.options.LazyDiskCacheEnabled {
-			g.lazyDiskDeleteChan <- item
+			dm := schema.DeleteMessage{
+				DiskUUID:    item.DiskUUID,
+				BatchNumber: item.BatchNumber,
+				WasRestored: item.WasRestored,
+			}
+
+			g.lazyDiskDeleteChan <- dm
+
 		} else {
 			err = g.diskCache.DeleteSingle(item.DiskUUID)
 			if err != nil {
@@ -186,23 +226,29 @@ func (g *GPQ[d]) Dequeue() (item schema.Item[d], err error) {
 
 }
 
-func (g *GPQ[d]) DequeueBatch(batchSize uint) (items []schema.Item[d], err error) {
-	i, err := g.queue.DequeueBatch(batchSize)
-	if err != nil {
-		return nil, err
+// DequeueBatch takes a batch size, and returns a slice ordered by priority up to the batchSize provided
+// enough messages are present to fill the batch. Partial batches will be returned if a error is encountered.
+func (g *GPQ[d]) DequeueBatch(batchSize uint) (items []*schema.Item[d], errs []error) {
+	items, errs = g.queue.DequeueBatch(batchSize)
+	if errs != nil {
+		return items, errs
 	}
-	items = *i
 
 	if g.options.DiskCacheEnabled {
-		if g.options.LazyDiskCacheEnabled {
-			for i := 0; i < len(items); i++ {
-				g.lazyDiskDeleteChan <- items[i]
-			}
-		} else {
-			for i := 0; i < len(items); i++ {
-				err = g.diskCache.DeleteSingle(items[i].DiskUUID)
+		for i := 0; i < len(items); i++ {
+			if g.options.LazyDiskCacheEnabled {
+				dm := schema.DeleteMessage{
+					DiskUUID:    items[i].DiskUUID,
+					BatchNumber: items[i].BatchNumber,
+					WasRestored: items[i].WasRestored,
+				}
+
+				g.lazyDiskDeleteChan <- dm
+
+			} else {
+				err := g.diskCache.DeleteSingle(items[i].DiskUUID)
 				if err != nil {
-					return nil, err
+					return nil, []error{err}
 				}
 			}
 		}
@@ -218,18 +264,19 @@ func (g *GPQ[d]) Prioritize() (escalated, removed uint, err error) {
 // Close performs a safe shutdown of the GPQ and the disk cache preventing data loss
 func (g *GPQ[d]) Close() {
 
-	if g.options.LazyDiskCacheEnabled && g.options.DiskCacheEnabled {
-		close(g.lazyDiskSendChan)
-		close(g.lazyDiskDeleteChan)
-	}
-
-	// Wait for all db sessions to sync to disk
-	g.activeDBSessions.Wait()
-
-	// Sync the disk cache
 	if g.options.DiskCacheEnabled {
+		if g.options.LazyDiskCacheEnabled {
+			close(g.lazyDiskSendChan)
+			close(g.lazyDiskDeleteChan)
+		}
+
+		// Wait for all db sessions to sync to disk
+		g.activeDBSessions.Wait()
+
+		// Safely close the diskCache
 		g.diskCache.Close()
 	}
+
 }
 
 func (g *GPQ[d]) lazyDiskWriter(maxDelay time.Duration) {
@@ -292,8 +339,8 @@ func (g *GPQ[d]) lazyDiskDeleter() {
 	g.activeDBSessions.Add(1)
 	defer g.activeDBSessions.Done()
 
-	batch := make(map[uint][]*schema.Item[d], 0)
-	restored := make([]*schema.Item[d], 0)
+	batch := make(map[uint][]*schema.DeleteMessage, 0)
+	restored := make([]*schema.DeleteMessage, 0)
 
 	for {
 		select {

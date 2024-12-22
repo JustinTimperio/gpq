@@ -6,8 +6,12 @@
 	GPQ is an extremely fast and flexible priority queue, capable of millions transactions a second. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
 </h4>
 
+## Notice
+While GPQ is largely stable, bugs are more than likely present at this early stage, and you should carefully consider if your application can tolerate any down time or lost messages that may result from adopting this project into a production workflow. If you run into any bugs please submit an issue or better a PR! Check out the guide to contributing below.
+
 
 ## Table of Contents
+- [Notice](#notice)
 - [Table of Contents](#table-of-contents)
 - [Background](#background)
 	- [Should I Use GPQ?](#should-i-use-gpq)
@@ -44,7 +48,7 @@ GPQ is a concurrency safe, embeddable priority queue that can be used in a varie
 
 
 ## Benchmarks
-Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, Zig, and Go to measure GPQ's performance against the standard implementations of other languages that can be found here at: [pq-bench](https://github.com/JustinTimperio/pq-bench) 
+Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, Zig, Python, and Go to measure GPQ's performance against the standard implementations of other languages that can be found here at: [pq-bench](https://github.com/JustinTimperio/pq-bench) 
 
 |                                                                                                             |                                                                                                          |
 |-------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
@@ -68,8 +72,8 @@ For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github
   - `ActiveBuckets() uint` - Returns the number of active buckets.
   - `Enqueue(item schema.Item[d]) error` - Enqueues an item into the queue.
   - `EnqueueBatch(items []schema.Item[d]) error` - Enqueues a batch of items into the queue.
-  - `Dequeue() (schema.Item[d], error)` - Dequeues an item from the queue.
-  - `DequeueBatch(batchSize uint) ([]schema.Item[d], error)` - Dequeues a batch of items from the queue.
+  - `Dequeue() (*schema.Item[d], error)` - Dequeues an item from the queue.
+  - `DequeueBatch(batchSize uint) ([]*schema.Item[d], error)` - Dequeues a batch of items from the queue.
   - `Prioritize() error` - Prioritizes the queue based on the values in each item.
   - `Close()` - Closes the queue and saves the queue to disk.
 
@@ -86,7 +90,7 @@ import (
 )
 
 func main() {
-	defaultMessageOptions := schema.EnQueueOptions{
+	defaultMessageOptions := schema.EnqueueOptions{
 		ShouldEscalate: true,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     true,
