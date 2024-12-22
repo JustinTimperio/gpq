@@ -28,7 +28,7 @@ type Item[d any] struct {
 	WasRestored      bool
 }
 
-func NewItem[d any](priority uint, data d, options EnQueueOptions) Item[d] {
+func NewItem[d any](priority uint, data d, options EnqueueOptions) Item[d] {
 	return Item[d]{
 		Priority:       priority,
 		Data:           data,
@@ -92,8 +92,8 @@ type GPQOptions struct {
 	DiskEncryptionKey []byte
 }
 
-// EnQueueOptions is used to configure the EnQueue method
-type EnQueueOptions struct {
+// EnqueueOptions is used to configure the EnQueue method
+type EnqueueOptions struct {
 	// ShouldEscalate is used to determine if the item should be escalated
 	ShouldEscalate bool
 	// EscalationRate is the time to wait before escalating the item (happens every duration)

@@ -219,7 +219,6 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err
 	}
 
 	// This is a very basic but fast algorithm that iterates from the front to the back of the queue.
-	// We start by defining a flag for if the last item was "escalated"
 	// If the item can escalate and has reached its ticker, then we check if the last item was escalated,
 	// and that we are not first in the queue. This strategy means that messages can only push up the queue,
 	// if other messages are also not being prioritized. In this model, messages not being escalated,

@@ -86,7 +86,7 @@ import (
 )
 
 func main() {
-	defaultMessageOptions := schema.EnQueueOptions{
+	defaultMessageOptions := schema.EnqueueOptions{
 		ShouldEscalate: true,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     true,

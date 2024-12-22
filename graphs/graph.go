@@ -17,7 +17,7 @@ import (
 var (
 	maxTotal              int = 10000000
 	nMaxBuckets           int = 100
-	defaultMessageOptions     = schema.EnQueueOptions{
+	defaultMessageOptions     = schema.EnqueueOptions{
 		ShouldEscalate: true,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     true,

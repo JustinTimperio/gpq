@@ -18,7 +18,7 @@ func TestOrder(t *testing.T) {
 		maxBuckets uint = 10
 	)
 
-	defaultMessageOptions := schema.EnQueueOptions{
+	defaultMessageOptions := schema.EnqueueOptions{
 		ShouldEscalate: false,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     false,
@@ -84,7 +84,7 @@ func TestOrder(t *testing.T) {
 
 func TestPrioritize(t *testing.T) {
 
-	defaultMessageOptions := schema.EnQueueOptions{
+	defaultMessageOptions := schema.EnqueueOptions{
 		ShouldEscalate: true,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     true,
@@ -206,7 +206,7 @@ func TestRestoreOrder(t *testing.T) {
 		maxBuckets uint = 10
 	)
 
-	defaultMessageOptions := schema.EnQueueOptions{
+	defaultMessageOptions := schema.EnqueueOptions{
 		ShouldEscalate: false,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     false,

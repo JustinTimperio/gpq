@@ -19,7 +19,7 @@ func TestSingleParallel(t *testing.T) {
 		maxBuckets uint = 10
 	)
 
-	defaultMessageOptions := schema.EnQueueOptions{
+	defaultMessageOptions := schema.EnqueueOptions{
 		ShouldEscalate: false,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     false,
@@ -102,7 +102,7 @@ func TestBatchParallel(t *testing.T) {
 		batchSize  uint = 10_000
 	)
 
-	defaultMessageOptions := schema.EnQueueOptions{
+	defaultMessageOptions := schema.EnqueueOptions{
 		ShouldEscalate: false,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     false,

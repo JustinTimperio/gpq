@@ -23,7 +23,7 @@ func TestE2E(t *testing.T) {
 		receivers  uint   = 4
 	)
 
-	defaultMessageOptions := schema.EnQueueOptions{
+	defaultMessageOptions := schema.EnqueueOptions{
 		ShouldEscalate: true,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     true,
