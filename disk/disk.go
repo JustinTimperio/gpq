@@ -86,7 +86,7 @@ func (d *Disk[T]) ProcessBatch(batch []*schema.Item[T]) error {
 	return nil
 }
 
-func (d *Disk[T]) DeleteBatch(batch []*schema.Item[T]) error {
+func (d *Disk[T]) DeleteBatch(batch []*schema.DeleteMessage) error {
 	txn := d.diskCache.NewTransaction(true)
 	defer txn.Discard()
 

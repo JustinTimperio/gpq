@@ -21,10 +21,10 @@ type CorePriorityQueue[T any] struct {
 	itemsInQueue          uint
 	disk                  *disk.Disk[T]
 	options               schema.GPQOptions
-	lazy_disk_delete_chan chan schema.Item[T]
+	lazy_disk_delete_chan chan schema.DeleteMessage
 }
 
-func NewCorePriorityQueue[T any](options schema.GPQOptions, diskCache *disk.Disk[T], lazy_disk_chan chan schema.Item[T]) CorePriorityQueue[T] {
+func NewCorePriorityQueue[T any](options schema.GPQOptions, diskCache *disk.Disk[T], deleteChan chan schema.DeleteMessage) CorePriorityQueue[T] {
 	buckets := hashmap.New[uint, *priorityQueue[T]]()
 	for i := uint(0); i < options.MaxPriority; i++ {
 		pq := newPriorityQueue[T]()
@@ -39,7 +39,7 @@ func NewCorePriorityQueue[T any](options schema.GPQOptions, diskCache *disk.Disk
 		bpq:                   &bpq,
 		disk:                  diskCache,
 		options:               options,
-		lazy_disk_delete_chan: lazy_disk_chan,
+		lazy_disk_delete_chan: deleteChan,
 	}
 }
 
@@ -181,7 +181,13 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err
 
 					if cpq.options.DiskCacheEnabled {
 						if cpq.options.LazyDiskCacheEnabled {
-							cpq.lazy_disk_delete_chan <- *item
+							dm := schema.DeleteMessage{
+								BatchNumber: item.BatchNumber,
+								DiskUUID:    item.DiskUUID,
+								WasRestored: item.WasRestored,
+							}
+
+							cpq.lazy_disk_delete_chan <- dm
 						} else {
 							cpq.disk.DeleteSingle(item.DiskUUID)
 						}

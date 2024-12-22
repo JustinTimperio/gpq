@@ -33,7 +33,7 @@ type GPQ[d any] struct {
 	// lazyDiskMessageChan is a channel used to send messages to the lazy disk cache
 	lazyDiskSendChan chan schema.Item[d]
 	// lazyDiskDeleteChan is a channel used to send messages to the lazy disk cache
-	lazyDiskDeleteChan chan schema.Item[d]
+	lazyDiskDeleteChan chan schema.DeleteMessage
 	// batchHandler allows for synchronization of disk cache batches
 	batchHandler *BatchHandler[d]
 	// batchCounter is used to keep track the current batch number
@@ -49,7 +49,7 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 	var diskCache *disk.Disk[d]
 	var err error
 	var sender chan schema.Item[d]
-	var receiver chan schema.Item[d]
+	var receiver chan schema.DeleteMessage
 
 	if Options.DiskCacheEnabled {
 		diskCache, err = disk.NewDiskCache[d](nil, Options)
@@ -59,7 +59,7 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 
 		if Options.LazyDiskCacheEnabled {
 			sender = make(chan schema.Item[d], Options.LazyDiskCacheChannelSize)
-			receiver = make(chan schema.Item[d], Options.LazyDiskCacheChannelSize)
+			receiver = make(chan schema.DeleteMessage, Options.LazyDiskCacheChannelSize)
 		}
 	}
 
@@ -206,8 +206,14 @@ func (g *GPQ[d]) Dequeue() (item *schema.Item[d], err error) {
 
 	if g.options.DiskCacheEnabled {
 		if g.options.LazyDiskCacheEnabled {
-			// TODO: this is stupid and we only need uuid + batch num
-			g.lazyDiskDeleteChan <- *item
+			dm := schema.DeleteMessage{
+				DiskUUID:    item.DiskUUID,
+				BatchNumber: item.BatchNumber,
+				WasRestored: item.WasRestored,
+			}
+
+			g.lazyDiskDeleteChan <- dm
+
 		} else {
 			err = g.diskCache.DeleteSingle(item.DiskUUID)
 			if err != nil {
@@ -231,8 +237,13 @@ func (g *GPQ[d]) DequeueBatch(batchSize uint) (items []*schema.Item[d], errs []e
 	if g.options.DiskCacheEnabled {
 		for i := 0; i < len(items); i++ {
 			if g.options.LazyDiskCacheEnabled {
-				// TODO: this is stupid and we only need uuid + batch num
-				g.lazyDiskDeleteChan <- *items[i]
+				dm := schema.DeleteMessage{
+					DiskUUID:    items[i].DiskUUID,
+					BatchNumber: items[i].BatchNumber,
+					WasRestored: items[i].WasRestored,
+				}
+
+				g.lazyDiskDeleteChan <- dm
 
 			} else {
 				err := g.diskCache.DeleteSingle(items[i].DiskUUID)
@@ -328,8 +339,8 @@ func (g *GPQ[d]) lazyDiskDeleter() {
 	g.activeDBSessions.Add(1)
 	defer g.activeDBSessions.Done()
 
-	batch := make(map[uint][]*schema.Item[d], 0)
-	restored := make([]*schema.Item[d], 0)
+	batch := make(map[uint][]*schema.DeleteMessage, 0)
+	restored := make([]*schema.DeleteMessage, 0)
 
 	for {
 		select {

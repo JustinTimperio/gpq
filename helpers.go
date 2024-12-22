@@ -36,7 +36,7 @@ func (bh *BatchHandler[T]) processBatch(batch []*schema.Item[T], batchNumber uin
 	bh.deletedBatches[batchNumber] = false
 }
 
-func (bh *BatchHandler[T]) deleteBatch(batch []*schema.Item[T], batchNumber uint, wasRestored bool) {
+func (bh *BatchHandler[T]) deleteBatch(batch []*schema.DeleteMessage, batchNumber uint, wasRestored bool) {
 	bh.mux.Lock()
 	defer bh.mux.Unlock()
 
