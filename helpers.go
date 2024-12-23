@@ -7,15 +7,15 @@ import (
 	"github.com/JustinTimperio/gpq/schema"
 )
 
-type BatchHandler[T any] struct {
+type batchHandler[T any] struct {
 	mux            *sync.Mutex
 	syncedBatches  map[uint]bool
 	deletedBatches map[uint]bool
 	diskCache      *disk.Disk[T]
 }
 
-func NewBatchHandler[T any](diskCache *disk.Disk[T]) *BatchHandler[T] {
-	return &BatchHandler[T]{
+func newBatchHandler[T any](diskCache *disk.Disk[T]) *batchHandler[T] {
+	return &batchHandler[T]{
 		mux:            &sync.Mutex{},
 		syncedBatches:  make(map[uint]bool),
 		deletedBatches: make(map[uint]bool),
@@ -23,7 +23,7 @@ func NewBatchHandler[T any](diskCache *disk.Disk[T]) *BatchHandler[T] {
 	}
 }
 
-func (bh *BatchHandler[T]) processBatch(batch []*schema.Item[T], batchNumber uint) {
+func (bh *batchHandler[T]) processBatch(batch []*schema.Item[T], batchNumber uint) {
 	bh.mux.Lock()
 	defer bh.mux.Unlock()
 
@@ -36,7 +36,7 @@ func (bh *BatchHandler[T]) processBatch(batch []*schema.Item[T], batchNumber uin
 	bh.deletedBatches[batchNumber] = false
 }
 
-func (bh *BatchHandler[T]) deleteBatch(batch []*schema.DeleteMessage, batchNumber uint, wasRestored bool) {
+func (bh *batchHandler[T]) deleteBatch(batch []*schema.DeleteMessage, batchNumber uint, wasRestored bool) {
 	bh.mux.Lock()
 	defer bh.mux.Unlock()
 
@@ -55,15 +55,15 @@ func (bh *BatchHandler[T]) deleteBatch(batch []*schema.DeleteMessage, batchNumbe
 
 }
 
-type BatchCounter struct {
+type batchCounter struct {
 	mux          *sync.Mutex
 	batchNumber  uint
 	batchCounter uint
 	batchSize    uint
 }
 
-func NewBatchCounter(batchSize uint) *BatchCounter {
-	return &BatchCounter{
+func newBatchCounter(batchSize uint) *batchCounter {
+	return &batchCounter{
 		mux:          &sync.Mutex{},
 		batchNumber:  0,
 		batchCounter: 0,
@@ -71,7 +71,7 @@ func NewBatchCounter(batchSize uint) *BatchCounter {
 	}
 }
 
-func (bc *BatchCounter) Increment() (batchNumber uint) {
+func (bc *batchCounter) increment() (batchNumber uint) {
 	bc.mux.Lock()
 	defer bc.mux.Unlock()
 

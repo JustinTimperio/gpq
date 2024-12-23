@@ -7,11 +7,12 @@
 </h4>
 
 <p align="center">
-	<img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/JustinTimperio/gpq">
-	<a href="https://pkg.go.dev/github.com/JustinTimperio/gpq"><img src="https://pkg.go.dev/badge/github.com/JustinTimperio/gpq.svg" alt="Go Reference"></a>
-	<img alt="GitHub License" src="https://img.shields.io/github/license/JustinTimperio/gpq">
-	<img alt="GitHub Release" src="https://img.shields.io/github/v/release/JustinTimperio/gpq">
-	<img alt="GitHub Issues or Pull Requests" src="https://img.shields.io/github/issues/JustinTimperio/gpq">
+	<a href="https://go.dev/dl/"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/JustinTimperio/gpq"></a>
+	<a href="https://pkg.go.dev/github.com/JustinTimperio/gpq"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/JustinTimperio/gpq.svg"></a>
+	<a href="https://github.com/JustinTimperio/gpq/blob/master/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/JustinTimperio/gpq"></a>
+	<a href="https://github.com/JustinTimperio/gpq/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/JustinTimperio/gpq"></a>
+	<a href="https://github.com/JustinTimperio/gpq/issues"><img alt="GitHub Issues" src="https://img.shields.io/github/issues/JustinTimperio/gpq"></a>
+	<a href="https://github.com/JustinTimperio/gpq/actions"><img alt="GitHub Branch Status" src="https://img.shields.io/github/checks-status/JustinTimperio/gpq/master"></a>
 </p>
 
 ## Notice
@@ -71,7 +72,7 @@ import "github.com/JustinTimperio/gpq"
 ```
 
 ### Prerequisites 
-For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github.com/cornelk/hashmap) and [BadgerDB](https://github.com/dgraph-io/badger). 
+For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github.com/cornelk/hashmap), [btree](https://github.com/tidwall/btree) and [BadgerDB](https://github.com/dgraph-io/badger). 
 
 ### API Reference
 - `NewGPQ[d any](options schema.GPQOptions) (uint, *GPQ[d], error)` - Creates a new GPQ with the specified options and returns the number of restored items, the GPQ, and an error if one occurred. 
@@ -102,7 +103,7 @@ func main() {
 		ShouldEscalate: true,
 		EscalationRate: time.Duration(time.Second),
 		CanTimeout:     true,
-		Timeout:        time.Duration(time.Second * 1),
+		Timeout:        time.Duration(time.Second * 5),
 	}
 
 	opts := schema.GPQOptions{

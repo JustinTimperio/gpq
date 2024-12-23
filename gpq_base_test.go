@@ -3,6 +3,7 @@ package gpq_test
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -113,9 +114,9 @@ func TestPrioritize(t *testing.T) {
 		}
 
 		var (
-			escalated uint
-			removed   uint
-			received  uint
+			escalated uint64
+			removed   uint64
+			received  uint64
 		)
 
 		var wg sync.WaitGroup
@@ -135,9 +136,10 @@ func TestPrioritize(t *testing.T) {
 					if err != nil {
 						log.Fatalln(err)
 					}
-					removed += r
-					escalated += e
-					t.Log("Received:", received, "Removed:", removed, "Escalated:", escalated)
+
+					atomic.AddUint64(&removed, uint64(r))
+					atomic.AddUint64(&escalated, uint64(e))
+					t.Log("Received:", atomic.LoadUint64(&received), "Removed:", atomic.LoadUint64(&removed), "Escalated:", atomic.LoadUint64(&escalated))
 
 				case <-shutdown:
 					break forloop
@@ -164,7 +166,7 @@ func TestPrioritize(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for {
-				if received+removed >= tm {
+				if atomic.LoadUint64(&received)+atomic.LoadUint64(&removed) >= uint64(tm) {
 					break
 				}
 				time.Sleep(time.Millisecond * 10)
@@ -172,7 +174,7 @@ func TestPrioritize(t *testing.T) {
 				if err != nil {
 					continue
 				}
-				received++
+				atomic.AddUint64(&received, 1)
 			}
 			t.Log("Dequeued all items")
 			shutdown <- struct{}{}
