@@ -52,8 +52,8 @@ func TestE2E(t *testing.T) {
 
 	var (
 		received  uint64
-		removed   uint
-		escalated uint
+		removed   uint64
+		escalated uint64
 	)
 
 	var wg sync.WaitGroup
@@ -72,9 +72,10 @@ func TestE2E(t *testing.T) {
 				if err != nil {
 					log.Fatalln(err)
 				}
-				removed += r
-				escalated += e
-				t.Log("Received:", received, "Removed:", removed, "Escalated:", escalated)
+
+				atomic.AddUint64(&received, uint64(r))
+				atomic.AddUint64(&escalated, uint64(e))
+				t.Log("Received:", atomic.LoadUint64(&received), "Removed:", atomic.LoadUint64(&removed), "Escalated:", atomic.LoadUint64(&escalated))
 
 			case <-shutdown:
 				break breaker
@@ -111,7 +112,7 @@ func TestE2E(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for {
-				if atomic.LoadUint64(&received)+uint64(removed) >= total {
+				if atomic.LoadUint64(&received)+atomic.LoadUint64(&removed) >= total {
 					break
 				}
 				items, err := queue.DequeueBatch(batchSize)

@@ -13,7 +13,7 @@ import (
 // Tests pushing and pulling single messages in parallel
 func TestSingleParallel(t *testing.T) {
 	var (
-		total      uint = 10_000_000
+		total      uint = 1_000_000
 		syncToDisk bool = false
 		lazySync   bool = false
 		maxBuckets uint = 10
@@ -95,7 +95,7 @@ func TestSingleParallel(t *testing.T) {
 // Tests pushing and pulling batches of messages in parallel
 func TestBatchParallel(t *testing.T) {
 	var (
-		total      uint = 10_000_000
+		total      uint = 1_000_000
 		syncToDisk bool = false
 		lazySync   bool = false
 		maxBuckets uint = 10

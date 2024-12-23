@@ -35,9 +35,9 @@ type GPQ[d any] struct {
 	// lazyDiskDeleteChan is a channel used to send messages to the lazy disk cache
 	lazyDiskDeleteChan chan schema.DeleteMessage
 	// batchHandler allows for synchronization of disk cache batches
-	batchHandler *BatchHandler[d]
+	batchHandler *batchHandler[d]
 	// batchCounter is used to keep track the current batch number
-	batchCounter *BatchCounter
+	batchCounter *batchCounter
 }
 
 // NewGPQ creates a new GPQ with the given number of buckets
@@ -72,8 +72,8 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 
 		lazyDiskSendChan:   sender,
 		lazyDiskDeleteChan: receiver,
-		batchHandler:       NewBatchHandler(diskCache),
-		batchCounter:       NewBatchCounter(Options.LazyDiskBatchSize),
+		batchHandler:       newBatchHandler(diskCache),
+		batchCounter:       newBatchCounter(Options.LazyDiskBatchSize),
 	}
 
 	var restored uint
@@ -130,7 +130,7 @@ func (g *GPQ[d]) Enqueue(item schema.Item[d]) error {
 		item.DiskUUID = key
 
 		if g.options.LazyDiskCacheEnabled {
-			item.BatchNumber = g.batchCounter.Increment()
+			item.BatchNumber = g.batchCounter.increment()
 			g.lazyDiskSendChan <- item
 		} else {
 			err = g.diskCache.WriteSingle(key, item)
@@ -169,7 +169,7 @@ func (g *GPQ[d]) EnqueueBatch(items []schema.Item[d]) []error {
 			items[i].DiskUUID = key
 
 			if g.options.LazyDiskCacheEnabled {
-				items[i].BatchNumber = g.batchCounter.Increment()
+				items[i].BatchNumber = g.batchCounter.increment()
 				g.lazyDiskSendChan <- items[i]
 			} else {
 				err = g.diskCache.WriteSingle(items[i].DiskUUID, items[i])
