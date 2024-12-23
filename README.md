@@ -12,7 +12,7 @@
 	<a href="https://github.com/JustinTimperio/gpq/blob/master/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/JustinTimperio/gpq"></a>
 	<a href="https://github.com/JustinTimperio/gpq/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/JustinTimperio/gpq"></a>
 	<a href="https://github.com/JustinTimperio/gpq/issues"><img alt="GitHub Issues" src="https://img.shields.io/github/issues/JustinTimperio/gpq"></a>
-	<a href="https://github.com/JustinTimperio/gpq/actions"><img alt="GitHub Branch Status" src="https://img.shields.io/github/checks-status/JustinTimperio/gpq/master"></a>
+	<a href="https://github.com/JustinTimperio/gpq/actions"><img alt="GitHub Branch Status" src="https://img.shields.io/github/check-runs/JustinTimperio/gpq/master"></a>
 </p>
 
 ## Notice
