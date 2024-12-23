@@ -113,17 +113,6 @@ func (g *GPQ[d]) ActiveBuckets() uint {
 	return g.queue.ActiveBuckets()
 }
 
-func (g *GPQ[d]) restoreDB(items []*schema.Item[d]) []error {
-	// Quick sanity check
-	for i := 0; i < len(items); i++ {
-		if items[i].Priority > uint(g.options.MaxPriority) {
-			return []error{fmt.Errorf("You are trying to restore items with priorities higher than the max allowed for this queue")}
-		}
-	}
-
-	return g.queue.EnqueueBatch(items)
-}
-
 // Enqueue adds an item to the queue with the given options
 func (g *GPQ[d]) Enqueue(item schema.Item[d]) error {
 
@@ -257,6 +246,9 @@ func (g *GPQ[d]) DequeueBatch(batchSize uint) (items []*schema.Item[d], errs []e
 	return items, nil
 }
 
+// Prioritize orders the queue based on the individual options added to
+// every message in the queue. Prioritizing the queue is a stop-the-world
+// event, so consider your usage carefully.
 func (g *GPQ[d]) Prioritize() (escalated, removed uint, err error) {
 	return g.queue.Prioritize()
 }
@@ -277,6 +269,17 @@ func (g *GPQ[d]) Close() {
 		g.diskCache.Close()
 	}
 
+}
+
+func (g *GPQ[d]) restoreDB(items []*schema.Item[d]) []error {
+	// Quick sanity check
+	for i := 0; i < len(items); i++ {
+		if items[i].Priority > uint(g.options.MaxPriority) {
+			return []error{fmt.Errorf("You are trying to restore items with priorities higher than the max allowed for this queue")}
+		}
+	}
+
+	return g.queue.EnqueueBatch(items)
 }
 
 func (g *GPQ[d]) lazyDiskWriter(maxDelay time.Duration) {

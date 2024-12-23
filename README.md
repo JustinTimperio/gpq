@@ -6,6 +6,14 @@
 	GPQ is an extremely fast and flexible priority queue, capable of millions transactions a second. GPQ supports a complex "Double Priority Queue" which allows for priorities to be distributed across N buckets, with each bucket holding a second priority queue which allows for internal escalation and timeouts of items based on parameters the user can specify during submission combined with how frequently you ask GPQ to prioritize the queue.
 </h4>
 
+<p align="center">
+	<img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/JustinTimperio/gpq">
+	<a href="https://pkg.go.dev/github.com/JustinTimperio/gpq"><img src="https://pkg.go.dev/badge/github.com/JustinTimperio/gpq.svg" alt="Go Reference"></a>
+	<img alt="GitHub License" src="https://img.shields.io/github/license/JustinTimperio/gpq">
+	<img alt="GitHub Release" src="https://img.shields.io/github/v/release/JustinTimperio/gpq">
+	<img alt="GitHub Issues or Pull Requests" src="https://img.shields.io/github/issues/JustinTimperio/gpq">
+</p>
+
 ## Notice
 While GPQ is largely stable, bugs are more than likely present at this early stage, and you should carefully consider if your application can tolerate any down time or lost messages that may result from adopting this project into a production workflow. If you run into any bugs please submit an issue or better a PR! Check out the guide to contributing below.
 
