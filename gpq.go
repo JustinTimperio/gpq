@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/JustinTimperio/gpq/disk"
-	"github.com/JustinTimperio/gpq/ftime"
+	"github.com/kpango/fastime"
 	"github.com/JustinTimperio/gpq/queues"
 	"github.com/JustinTimperio/gpq/schema"
 
@@ -119,7 +119,7 @@ func (g *GPQ[d]) Enqueue(item schema.Item[d]) error {
 	if item.Priority > uint(g.options.MaxPriority) {
 		return errors.New("Priority bucket does not exist")
 	}
-	item.SubmittedAt = ftime.Now()
+	item.SubmittedAt = fastime.Now()
 	item.LastEscalated = item.SubmittedAt
 
 	if g.options.DiskCacheEnabled && !item.WasRestored {
