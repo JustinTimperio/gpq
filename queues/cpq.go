@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/JustinTimperio/gpq/disk"
-	"github.com/JustinTimperio/gpq/ftime"
+	"github.com/kpango/fastime"
 	"github.com/JustinTimperio/gpq/queues/gheap"
 	"github.com/JustinTimperio/gpq/schema"
 
@@ -176,7 +176,7 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err
 			item := bucket.items[currentIndex]
 
 			if item.CanTimeout {
-				currentTime := ftime.Now()
+				currentTime := fastime.Now()
 				if currentTime.Sub(item.SubmittedAt) > item.Timeout {
 
 					if cpq.options.DiskCacheEnabled {
@@ -238,7 +238,7 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err
 			item := bucket.items[i]
 
 			if item.ShouldEscalate {
-				currentTime := ftime.Now()
+				currentTime := fastime.Now()
 				if currentTime.Sub(item.LastEscalated) > item.EscalationRate {
 
 					if !lastItemWasEscalated && i != 0 {

@@ -1,11 +1,12 @@
 module github.com/JustinTimperio/gpq
 
-go 1.22
+go 1.24.4
 
 require (
 	github.com/cornelk/hashmap v1.0.8
 	github.com/dgraph-io/badger/v4 v4.5.0
 	github.com/google/uuid v1.6.0
+	github.com/kpango/fastime v1.1.10
 	github.com/tidwall/btree v1.7.0
 )
 
