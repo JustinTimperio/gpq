@@ -1,6 +1,6 @@
 module github.com/JustinTimperio/gpq
 
-go 1.24.4
+go 1.22
 
 require (
 	github.com/cornelk/hashmap v1.0.8
