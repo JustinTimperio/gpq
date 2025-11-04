@@ -6,9 +6,9 @@ import (
 	"sync"
 
 	"github.com/JustinTimperio/gpq/disk"
-	"github.com/JustinTimperio/gpq/ftime"
 	"github.com/JustinTimperio/gpq/queues/gheap"
 	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/timekeeper"
 
 	"github.com/cornelk/hashmap"
 	"github.com/tidwall/btree"
@@ -61,7 +61,7 @@ func (cpq *CorePriorityQueue[T]) Enqueue(data *schema.Item[T]) error {
 
 	bucket, ok := cpq.buckets.Get(data.Priority)
 	if !ok {
-		return errors.New("Core Priority Queue Error: Priority not found")
+		return fmt.Errorf("priority bucket %d not found in queue", data.Priority)
 	}
 
 	cpq.bpq.Insert(data.Priority)
@@ -133,7 +133,7 @@ func (cpq *CorePriorityQueue[T]) DequeueBatch(batchSize uint) ([]*schema.Item[T]
 	defer cpq.mux.Unlock()
 
 	if cpq.bpq.Len() == 0 {
-		return nil, []error{errors.New("Core Priority Queue Error: No items found in the queue")}
+		return nil, []error{errors.New("queue is empty, no items to dequeue")}
 	}
 
 	batch := make([]*schema.Item[T], 0, batchSize)
@@ -145,7 +145,15 @@ func (cpq *CorePriorityQueue[T]) DequeueBatch(batchSize uint) ([]*schema.Item[T]
 
 		bucket, ok := cpq.buckets.Get(priority)
 		if !ok {
-			return batch, []error{errors.New("Core Priority Queue Error: Internal error, priority not found")}
+			// Internal corruption detected - rollback items already dequeued
+			for _, item := range batch {
+				cpq.bpq.Insert(item.Priority)
+				if b, found := cpq.buckets.Get(item.Priority); found {
+					gheap.Enqueue[T](b, item)
+					cpq.itemsInQueue++
+				}
+			}
+			return nil, []error{fmt.Errorf("Core Priority Queue Error: Internal corruption - priority %d in btree but not in hashmap (attempted to dequeue %d items before error)", priority, len(batch))}
 		}
 
 		item, err := gheap.Dequeue[T](bucket)
@@ -165,18 +173,33 @@ func (cpq *CorePriorityQueue[T]) DequeueBatch(batchSize uint) ([]*schema.Item[T]
 }
 
 func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err error) {
-	cpq.mux.Lock()
-	defer cpq.mux.Unlock()
-
+	// Collect bucket keys with read lock
+	var bucketKeys []uint
+	cpq.mux.RLock()
 	cpq.buckets.Range(func(key uint, bucket *priorityQueue[T]) bool {
-		// Iterate through the bucket and remove items that have been waiting too long
+		bucketKeys = append(bucketKeys, key)
+		return true
+	})
+	cpq.mux.RUnlock()
+
+	// Process each bucket with individual locks
+	for _, key := range bucketKeys {
+		cpq.mux.Lock()
+
+		bucket, ok := cpq.buckets.Get(key)
+		if !ok {
+			cpq.mux.Unlock()
+			continue // Bucket was removed, skip
+		}
+
+		// Process timeouts in this bucket
 		var len = bucket.Len()
 		var currentIndex uint
 		for i := 0; i < len; i++ {
 			item := bucket.items[currentIndex]
 
 			if item.CanTimeout {
-				currentTime := ftime.Now()
+				currentTime := timekeeper.Now()
 				if currentTime.Sub(item.SubmittedAt) > item.Timeout {
 
 					if cpq.options.DiskCacheEnabled {
@@ -196,7 +219,8 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err
 					_, e := gheap.Remove[T](bucket, item)
 					if e != nil {
 						err = fmt.Errorf("Core Priority Queue Error: %w", err)
-						return false
+						cpq.mux.Unlock()
+						return removed, escalated, err
 					}
 					cpq.itemsInQueue--
 					removed++
@@ -209,54 +233,57 @@ func (cpq *CorePriorityQueue[T]) Prioritize() (removed uint, escalated uint, err
 				currentIndex++
 			}
 		}
-		return true
-	})
 
-	// Iterate through the buckets and remove empty buckets
-	cpq.buckets.Range(func(key uint, bucket *priorityQueue[T]) bool {
-		if bucket.Len() == 0 {
-			cpq.bpq.Delete(key)
-		}
-		return true
-	})
-
-	if err != nil {
-		return removed, escalated, err
+		cpq.mux.Unlock()
 	}
 
-	// This is a very basic but fast algorithm that iterates from the front to the back of the queue.
-	// If the item can escalate and has reached its ticker, then we check if the last item was escalated,
-	// and that we are not first in the queue. This strategy means that messages can only push up the queue,
-	// if other messages are also not being prioritized. In this model, messages not being escalated,
-	// can be impacted by other high priority messages allowing for fairly complex queue strategies.
-	// I think in the future this can allow for more advanced features but seems fine for now.
-	cpq.buckets.Range(func(key uint, bucket *priorityQueue[T]) bool {
+	// Clean up empty buckets
+	cpq.mux.Lock()
+	for _, key := range bucketKeys {
+		bucket, ok := cpq.buckets.Get(key)
+		if ok && bucket.Len() == 0 {
+			cpq.bpq.Delete(key)
+		}
+	}
+	cpq.mux.Unlock()
+
+	// Process escalations with per-bucket locking
+	for _, key := range bucketKeys {
+		cpq.mux.Lock()
+
+		bucket, ok := cpq.buckets.Get(key)
+		if !ok {
+			cpq.mux.Unlock()
+			continue
+		}
+
 		var lastItemWasEscalated bool
 		var len = bucket.Len()
 
 		for i := 0; i < len; i++ {
 			item := bucket.items[i]
 
-			if item.ShouldEscalate {
-				currentTime := ftime.Now()
-				if currentTime.Sub(item.LastEscalated) > item.EscalationRate {
+			// Reset flag at start of each iteration
+			wasEscalatedThisRound := false
 
-					if !lastItemWasEscalated && i != 0 {
-						item.LastEscalated = currentTime
-						bucket.UpdatePriority(item, i-1)
-						escalated++
-					}
-					// We don't need to update lastItemWasEscalated here because we just swapped
-					// the current cursor index, with cursor index - 1. The previous index must have
-					// not been escalated so we don't need to update lastItemWasEscalated
+			if item.ShouldEscalate {
+				currentTime := timekeeper.Now()
+				readyToEscalate := currentTime.Sub(item.LastEscalated) > item.EscalationRate
+				canMove := !lastItemWasEscalated && i != 0
+
+				if readyToEscalate && canMove {
+					item.LastEscalated = currentTime
+					bucket.UpdatePriority(item, i-1)
+					escalated++
+					wasEscalatedThisRound = true
 				}
-			} else {
-				lastItemWasEscalated = false
 			}
+
+			lastItemWasEscalated = wasEscalatedThisRound
 		}
 
-		return true
-	})
+		cpq.mux.Unlock()
+	}
 
 	return removed, escalated, nil
 }

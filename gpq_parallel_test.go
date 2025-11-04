@@ -175,6 +175,7 @@ func TestBatchParallel(t *testing.T) {
 	if queue.ItemsInQueue() != 0 {
 		t.Fatal("Items in queue:", queue.ItemsInQueue())
 	}
+	t.Log("Received", received, "messages!")
 
 	queue.Close()
 	t.Log("Batch Parallel Test Passed")

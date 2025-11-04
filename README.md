@@ -59,10 +59,10 @@ GPQ is a concurrency safe, embeddable priority queue that can be used in a varie
 ## Benchmarks
 Due to the fact that most operations are done in constant time `O(1)` or logarithmic time `O(log n)`, with the exception of the prioritize function which happens in linear time `O(n)`, all GPQ operations are extremely fast. A single GPQ can handle a few million transactions a second and can be tuned depending on your work load. I have included some basic benchmarks using C++, Rust, Zig, Python, and Go to measure GPQ's performance against the standard implementations of other languages that can be found here at: [pq-bench](https://github.com/JustinTimperio/pq-bench) 
 
-|                                                                                                             |                                                                                                          |
-|-------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| ![Time-Spent](https://github.com/JustinTimperio/pq-bench/blob/master/docs/Time-Spent-vs-Implementation.png) | ![Queue-Speed-WITHOUT-Reprioritize](./docs/Queue-Speed-Without-Prioritize.png)                           |
-| ![Queue-Speed-WITH-Reprioritize](./docs/Queue-Speed-With-Prioritize.png)                                    | ![Average Time to Send and Receive VS Bucket Count](./docs/Time-to-Send-and-Receive-VS-Bucket-Count.png) |
+|                                                                          |                                                                                                          |
+|--------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
+| ![Time-Spent](./docs/Real-Time-vs-Linear-Time.png)                       | ![Queue-Speed-WITHOUT-Reprioritize](./docs/Queue-Speed-Without-Prioritize.png)                           |
+| ![Queue-Speed-WITH-Reprioritize](./docs/Queue-Speed-With-Prioritize.png) | ![Average Time to Send and Receive VS Bucket Count](./docs/Time-to-Send-and-Receive-VS-Bucket-Count.png) |
 
 ## Usage
 GPQ at the core is a embeddable priority queue meant to be used at the core of critical workloads that require complex queueing and delivery order guarantees. The best way to use it is just to import it.
@@ -77,7 +77,7 @@ For this you will need Go >= `1.22` and gpq itself uses [hashmap](https://github
 ### API Reference
 - `NewGPQ[d any](options schema.GPQOptions) (uint, *GPQ[d], error)` - Creates a new GPQ with the specified options and returns the number of restored items, the GPQ, and an error if one occurred. 
   - `ItemsInQueue() uint` - Returns the number of items in the queue.
-  - `ItemsInDB() uint` - Returns the number of items in the database.
+  - `ItemsInDB() (uint, error)` - Returns the number of items in the database.
   - `ActiveBuckets() uint` - Returns the number of active buckets.
   - `Enqueue(item schema.Item[d]) error` - Enqueues an item into the queue.
   - `EnqueueBatch(items []schema.Item[d]) error` - Enqueues a batch of items into the queue.

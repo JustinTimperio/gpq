@@ -45,14 +45,17 @@ func (bh *batchHandler[T]) deleteBatch(batch []*schema.DeleteMessage, batchNumbe
 		return
 	}
 
-	bh.syncedBatches[batchNumber] = false
-	bh.deletedBatches[batchNumber] = true
-
-	if _, ok := bh.syncedBatches[batchNumber]; ok {
+	// Check if this batch was already synced to disk
+	if alreadySynced, ok := bh.syncedBatches[batchNumber]; ok && alreadySynced {
+		// Batch is on disk, safe to delete
 		bh.diskCache.DeleteBatch(batch)
+		delete(bh.syncedBatches, batchNumber)
+		delete(bh.deletedBatches, batchNumber)
 		return
 	}
 
+	// Batch not synced yet, just mark for deletion
+	bh.deletedBatches[batchNumber] = true
 }
 
 type batchCounter struct {
