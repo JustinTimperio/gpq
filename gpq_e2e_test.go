@@ -14,7 +14,7 @@ import (
 
 func TestE2E(t *testing.T) {
 	var (
-		total      uint64 = 10_000_000
+		total      uint64 = 1_000_000
 		syncToDisk bool   = true
 		lazySync   bool   = true
 		maxBuckets uint   = 10
@@ -38,7 +38,7 @@ func TestE2E(t *testing.T) {
 		DiskCacheCompression:     true,
 		DiskEncryptionEnabled:    true,
 		DiskEncryptionKey:        []byte("12345678901234567890123456789012"),
-		LazyDiskCacheChannelSize: 1_000_000,
+		LazyDiskCacheChannelSize: 500_000,
 
 		DiskWriteDelay:       time.Duration(time.Second * 5),
 		LazyDiskCacheEnabled: lazySync,

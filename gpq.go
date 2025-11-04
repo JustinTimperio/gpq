@@ -1,15 +1,15 @@
 package gpq
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/JustinTimperio/gpq/disk"
-	"github.com/JustinTimperio/gpq/ftime"
 	"github.com/JustinTimperio/gpq/queues"
 	"github.com/JustinTimperio/gpq/schema"
+	"github.com/JustinTimperio/gpq/timekeeper"
 
 	"github.com/google/uuid"
 )
@@ -38,6 +38,11 @@ type GPQ[d any] struct {
 	batchHandler *batchHandler[d]
 	// batchCounter is used to keep track the current batch number
 	batchCounter *batchCounter
+
+	// ctx is the context for graceful shutdown
+	ctx context.Context
+	// cancel is the cancel function for the context
+	cancel context.CancelFunc
 }
 
 // NewGPQ creates a new GPQ with the given number of buckets
@@ -63,6 +68,8 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 		}
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	gpq := &GPQ[d]{
 		queue:   queues.NewCorePriorityQueue[d](Options, diskCache, receiver),
 		options: Options,
@@ -74,6 +81,9 @@ func NewGPQ[d any](Options schema.GPQOptions) (uint, *GPQ[d], error) {
 		lazyDiskDeleteChan: receiver,
 		batchHandler:       newBatchHandler(diskCache),
 		batchCounter:       newBatchCounter(Options.LazyDiskBatchSize),
+
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
 	var restored uint
@@ -104,7 +114,7 @@ func (g *GPQ[d]) ItemsInQueue() uint {
 }
 
 // ItemsInDB returns the total number of items currently commit to disk
-func (g *GPQ[d]) ItemsInDB() uint {
+func (g *GPQ[d]) ItemsInDB() (uint, error) {
 	return g.diskCache.ItemsInDB()
 }
 
@@ -117,9 +127,9 @@ func (g *GPQ[d]) ActiveBuckets() uint {
 func (g *GPQ[d]) Enqueue(item schema.Item[d]) error {
 
 	if item.Priority > uint(g.options.MaxPriority) {
-		return errors.New("Priority bucket does not exist")
+		return fmt.Errorf("priority %d exceeds maximum allowed priority %d", item.Priority, g.options.MaxPriority)
 	}
-	item.SubmittedAt = ftime.Now()
+	item.SubmittedAt = timekeeper.Now()
 	item.LastEscalated = item.SubmittedAt
 
 	if g.options.DiskCacheEnabled && !item.WasRestored {
@@ -131,7 +141,12 @@ func (g *GPQ[d]) Enqueue(item schema.Item[d]) error {
 
 		if g.options.LazyDiskCacheEnabled {
 			item.BatchNumber = g.batchCounter.increment()
-			g.lazyDiskSendChan <- item
+			select {
+			case g.lazyDiskSendChan <- item:
+				// Successfully sent
+			case <-g.ctx.Done():
+				return fmt.Errorf("queue is closing: %w", g.ctx.Err())
+			}
 		} else {
 			err = g.diskCache.WriteSingle(key, item)
 			if err != nil {
@@ -170,7 +185,13 @@ func (g *GPQ[d]) EnqueueBatch(items []schema.Item[d]) []error {
 
 			if g.options.LazyDiskCacheEnabled {
 				items[i].BatchNumber = g.batchCounter.increment()
-				g.lazyDiskSendChan <- items[i]
+				select {
+				case g.lazyDiskSendChan <- items[i]:
+					// Successfully sent
+				case <-g.ctx.Done():
+					errors = append(errors, fmt.Errorf("queue is closing: %w", g.ctx.Err()))
+					continue
+				}
 			} else {
 				err = g.diskCache.WriteSingle(items[i].DiskUUID, items[i])
 				if err != nil {
@@ -255,6 +276,8 @@ func (g *GPQ[d]) Prioritize() (escalated, removed uint, err error) {
 
 // Close performs a safe shutdown of the GPQ and the disk cache preventing data loss
 func (g *GPQ[d]) Close() {
+	// Signal all goroutines to stop
+	g.cancel()
 
 	if g.options.DiskCacheEnabled {
 		if g.options.LazyDiskCacheEnabled {
@@ -318,6 +341,7 @@ func (g *GPQ[d]) lazyDiskWriter(maxDelay time.Duration) {
 
 	go func() {
 		defer wg.Done()
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
@@ -353,7 +377,7 @@ func (g *GPQ[d]) lazyDiskDeleter() {
 
 				for i, v := range batch {
 					g.batchHandler.deleteBatch(v, i, false)
-					batch[item.BatchNumber] = batch[item.BatchNumber][:0]
+					delete(batch, i)
 				}
 				return
 			}

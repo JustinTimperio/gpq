@@ -2,6 +2,7 @@ package disk
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/JustinTimperio/gpq/schema"
 
@@ -16,7 +17,7 @@ type Disk[T any] struct {
 func NewDiskCache[T any](bLogger badger.Logger, options schema.GPQOptions) (*Disk[T], error) {
 
 	if options.DiskCachePath == "" {
-		return nil, errors.New("Error creating disk cache: path is empty")
+		return nil, errors.New("disk cache path cannot be empty")
 	}
 
 	opts := badger.DefaultOptions(options.DiskCachePath)
@@ -29,7 +30,7 @@ func NewDiskCache[T any](bLogger badger.Logger, options schema.GPQOptions) (*Dis
 	}
 	db, err := badger.Open(opts)
 	if err != nil {
-		return nil, errors.New("Error opening disk cache: " + err.Error())
+		return nil, fmt.Errorf("failed to open disk cache at %s: %w", options.DiskCachePath, err)
 	}
 
 	return &Disk[T]{diskCache: db}, nil
@@ -40,10 +41,11 @@ func (d *Disk[T]) Close() error {
 	return d.diskCache.Close()
 }
 
-func (d *Disk[T]) ItemsInDB() uint {
+func (d *Disk[T]) ItemsInDB() (uint, error) {
 	var count uint
-	_ = d.diskCache.View(func(txn *badger.Txn) error {
+	err := d.diskCache.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
@@ -53,7 +55,10 @@ func (d *Disk[T]) ItemsInDB() uint {
 
 		return nil
 	})
-	return count
+	if err != nil {
+		return 0, fmt.Errorf("failed to count items in disk cache: %w", err)
+	}
+	return count, nil
 }
 
 func (d *Disk[T]) ProcessBatch(batch []*schema.Item[T]) error {
@@ -72,7 +77,9 @@ func (d *Disk[T]) ProcessBatch(batch []*schema.Item[T]) error {
 				return err
 			}
 			txn = d.diskCache.NewTransaction(true)
-			txn.Set(entry.DiskUUID, b)
+			if err := txn.Set(entry.DiskUUID, b); err != nil {
+				return fmt.Errorf("failed to write item after transaction split: %w", err)
+			}
 
 		} else if err != nil {
 			return err
@@ -98,7 +105,9 @@ func (d *Disk[T]) DeleteBatch(batch []*schema.DeleteMessage) error {
 				return err
 			}
 			txn = d.diskCache.NewTransaction(true)
-			txn.Delete(entry.DiskUUID)
+			if err := txn.Delete(entry.DiskUUID); err != nil {
+				return fmt.Errorf("failed to delete item after transaction split: %w", err)
+			}
 		} else if err != nil {
 			return err
 		}
@@ -156,11 +165,13 @@ func (d *Disk[T]) RestoreFromDisk() ([]*schema.Item[T], error) {
 			})
 
 			if len(value) == 0 {
-				return errors.New("Error reading from disk cache: value is empty")
+				return fmt.Errorf("empty value found in disk cache for key=%x", key)
 			}
 
 			obj := new(schema.Item[T])
-			obj.FromBytes(value)
+			if err := obj.FromBytes(value); err != nil {
+				return fmt.Errorf("corrupted data found in disk cache (key=%x): %w", key, err)
+			}
 			obj.WasRestored = true
 			items = append(items, obj)
 
@@ -169,8 +180,8 @@ func (d *Disk[T]) RestoreFromDisk() ([]*schema.Item[T], error) {
 		return nil
 	})
 	if err != nil {
-		return nil, errors.New("Error reading from disk cache: " + err.Error())
+		return nil, fmt.Errorf("failed to restore items from disk cache: %w", err)
 	}
 
-	return items, err
+	return items, nil
 }
